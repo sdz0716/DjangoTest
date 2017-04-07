@@ -6,5 +6,10 @@ settings.py ：该 Django 项目的设置或配置。 查看并理解这个文�
 
 urls.py：Django项目的URL设置。 可视其为你的django网站的目录。 目前，它是空的。
 
-页面的内容是靠view function（视图函数） 来产生，URL定义在 URLconf 中.
+页面的内容是靠view function（视图函数） 来产生，URL定义在 URLconf 中.一个视图就是Python的一个函数。这个函数第一个参数的类型是HttpRequest；它返回一个HttpResponse实例。为了使一个Python的函数成为一个Django可识别的视图，它必须满足这两个条件。 （也有例外，但是我们稍后才会接触到。
+
+匹配网站根目录的URL模式, ('^$', my_homepage_view)
+
+
+
 
