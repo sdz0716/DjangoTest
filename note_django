@@ -1,0 +1,10 @@
+__init__.py ：让 Python 把该目录当成一个开发包 (即一组模块)所需的文件。 这是一个空文件，一般你不需要修改它。
+
+manage.py ：一种命令行工具，允许你以多种方式与该 Django 项目进行交互。 键入python manage.py help，看一下它能做什么。 你应当不需要编辑这个文件；在这个目录下生成它纯是为了方便。
+
+settings.py ：该 Django 项目的设置或配置。 查看并理解这个文件中可用的设置类型及其默认值。
+
+urls.py：Django项目的URL设置。 可视其为你的django网站的目录。 目前，它是空的。
+
+页面的内容是靠view function（视图函数） 来产生，URL定义在 URLconf 中.
+
