@@ -2,23 +2,19 @@
 {#<html lang="en">#}
 {#<head>#}
 {#    <meta charset="UTF-8">#}
-{#    <title>The current time</title>#}
+{#    <title>Title</title>#}
 {#</head>#}
 {#<body>#}
-{#    <h1>My helpful timestamp site</h1>#}
-{#    <p>It is now {{ var }}.</p>#}
 {##}
-{#    <hr>#}
-{#    <p>thanks for visiting my site</p>#}
 {#</body>#}
 {#</html>#}
 
 {% extends 'base.html' %}
 
 {% block title %}
-The current time
+Future time.
 {% endblock %}
 
 {% block content %}
-<p>It is now {{ var }}</p>
+<p>In {{ hour_offset }} hour(s), it will be {{ next_time }}.</p>
 {% endblock %}

@@ -231,3 +231,42 @@ return render_to_response('dateapp/current_datetime.html', {'current_date': now}
 {% include 'includes/nav.html' %}
 {% include template_name %}  以变量 template_name 的值为名称的模板
 
+【模板继承】
+可以对那些 不同 的代码段进行定义，而不是 共同 代码段。见base.html
+见views.py的current_datetime和hours_ahead函数，注意函数中的变量需要与对应的html中的变量相匹配。
+对应的html文件中{% extends %} 标签注明此为子模板。
+由于子模板并没有定义 footer 块，模板系统将使用在父模板中定义的值。 父模板 {% block %} 标签中的内容总是被当作一条退路。
+
+使用继承的一种常见方式是下面的三层法：
+1，创建 base.html 模板，在其中定义站点的主要外观感受。 这些都是不常修改甚至从不修改的部分。
+2，为网站的每个区域创建 base_SECTION.html 模板(例如, base_photos.html 和 base_forum.html )。这些模板对 base.html 进行拓展，并包含区域特定的风格与设计。
+3，为每种类型的页面创建独立的模板，例如论坛页面或者图片库。 这些模板拓展相应的区域模板。
+
+使用模板继承的一些诀窍：
+1，如果在模板中使用 {% extends %} ，必须保证其为模板中的第一个模板标记。 否则，模板继承将不起作用。
+2，基础模板中的 {% block %} 标签越多越好。 记住，子模板不必定义父模板中所有的代码块，因此你可以用合理的缺省值对一些代码块进行填充，然后只对子模板所需的代码块进行（重）定义。
+3，如果发觉自己在多个模板之间拷贝代码，你应该考虑将该代码段放置到父模板的某个 {% block %} 中。
+4，如果你需要访问父模板中的块的内容，使用 {{ block.super }}这个标签吧，这一个魔法变量将会表现出父模板中的内容。 如果只想在上级代码块基础上添加内容，而不是全部重载，该变量就显得非常有用了
+5,不允许在同一个模板中定义多个同名的 {% block %}
+6,{% extends %} 对所传入模板名称使用的加载方法和 get_template() 相同。 也就是说，会将模板名称被添加到 TEMPLATE_DIRS 设置之后。
+7,多数情况下， {% extends %} 的参数应该是字符串，但是如果直到运行时方能确定父模板名，这个参数也可以是个变量。 这使得你能够实现一些很酷的动态功能。
+
+
+【模型】
+ MVC 模式，可以称得上是一种 MVC 框架。 以下是 Django 中 M、V 和 C 各自的含义：
+M ，数据存取部分，由django数据库层处理，本章要讲述的内容。
+V ，选择显示哪些数据要显示以及怎样显示的部分，由视图和模板处理。
+C ，根据用户输入委派视图的部分，由 Django 框架根据 URLconf 设置，对给定 URL 调用适当的 Python 函数。
+
+由于 C 由框架自行处理，而 Django 里更关注的是模型（Model）、模板(Template)和视图（Views），Django 也被称为 MTV 框架 。在 MTV 开发模式中：
+M 代表模型（Model），即数据存取层。 该层处理与数据相关的所有事务： 如何存取、如何验证有效性、包含哪些行为以及数据之间的关系等。
+T 代表模板(Template)，即表现层。 该层处理与表现相关的决定： 如何在页面或其他类型文档中进行显示。
+V 代表视图（View），即业务逻辑层。 该层包含存取模型及调取恰当模板的相关逻辑。 你可以把它看作模型与模板之间的桥梁。
+
+【连接mysql配置】
+修改settings.py中的DATABASE字典中的配置。
+安装mysqlclient，作为python和Django的接口。
+进入python manage.py shell，测试配置。
+>>> from django.db import connection
+>>> cursor = connection.cursor()
+
