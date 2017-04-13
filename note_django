@@ -270,3 +270,140 @@ V 代表视图（View），即业务逻辑层。 该层包含存取模型及调�
 >>> from django.db import connection
 >>> cursor = connection.cursor()
 
+【第一个应用程序APP】
+ project 和 app区别就是一个是配置另一个是 代码。一个project包含很多个Django app以及对它们的配置。
+技术上，project的作用是提供配置文件，比方说哪里定义数据库连接信息, 安装的app列表， TEMPLATE_DIRS ，等等。
+一个app是一套Django功能的集合，通常包括模型和视图，按Python的包结构的方式存在。
+例如，Django本身内建有一些app，例如注释系统和自动管理界面。 app的一个关键点是它们是很容易移植到其他project和被多个project复用。
+系统对app有一个约定： 如果你使用了Django的数据库层（模型），你 必须创建一个Django app。 模型必须存放在apps中。
+
+新建APP：python manage.py startapp books  会生成books文件夹并包含一些初始文件。
+
+【第一个模型】
+“每个数据库表对应一个类”这条规则的例外情况是多对多关系。 在我们的范例模型中， Book 有一个 多对多字段 叫做 authors 。 该字段表明一本书籍有一个或多个作者，但 Book 数据库表却并没有 authors 字段。 相反，Django创建了一个额外的表（多对多连接表）来处理书籍和作者之间的映射关系。
+最后需要注意的是，我们并没有显式地为这些模型定义任何主键。 除非你单独指明，否则Django会自动为每个模型生成一个自增长的整数主键字段每个Django模型都要求有单独的主键。id
+
+{以下为1.10.0版本操作，与老版本不同}
+编辑 settings.py 文件， 找到 INSTALLED_APPS 设置。添加`` ‘books’`` 到`` INSTALLED_APPS`` 的末尾。
+执行如下命令生成数据库表：
+python manage.py check  检查模型的语法和逻辑是否正确。
+python manage.py makemigrations 用来检测数据库变更和生成数据库迁移文件
+python manage.py sqlmigrate demo 0001 用来把数据库迁移文件转换成数据库语言
+python manage.py migrate 用于执行迁移动作
+
+python manage.py shell 中执行：
+>>> p1 = Publisher(name='Apress', address='2855 Telegraph Avenue',
+...     city='Berkeley', state_province='CA', country='U.S.A.',
+...     website='http://www.apress.com/')
+>>> p1.save()       #Django 会在后台执行一条 INSERT 语句。
+>>> p2 = Publisher.objects.create(name="O'Reilly",
+...     address='10 Fawcett St.', city='Cambridge',
+...     state_province='MA', country='U.S.A.',
+...     website='http://www.oreilly.com/')      #使用`` objects.create()`` 方法,可以一步完成对象的创建与存储至数据库。
+>>> publisher_list      #Django执行了一条SQL `` SELECT`` 语句。
+[<Publisher: Publisher object>, <Publisher: Publisher object>]
+
+解决以上输出中Publisher object解码问题，需要在models.py中的每个类中添加 def __str__(): 方法。老版本为添加__unicode__()。
+退出manage.py shell后，重新进入
+In [1]: from books.models import Publisher
+In [2]: Publisher.objects.all()
+Out[2]: <QuerySet [<Publisher: Apress>, <Publisher: O'Reilly>, <Publisher: O'Reilly>]>
+
+更新数据库内容：
+In [3]: p = Publisher(name='Apress',
+   ...:          address='2855 Telegraph Ave.',
+   ...:          city='Berkeley',
+   ...:          state_province='CA',
+   ...:          country='U.S.A.',
+   ...:          website='http://www.apress.com/')
+In [4]: p.save()
+In [5]: p.id
+Out[5]: 4
+In [6]: p.name = 'Apress Publishing'
+In [7]: p.save()
+In [8]: p.name
+Out[8]: 'Apress Publishing'
+
+数据查询：
+调用绑定在该模型上的管理器(objects)的相应方法(如all)。
+
+数据过滤：
+>>> Publisher.objects.filter(name='Apress')     #使用filter()
+[<Publisher: Apress>]
+>>> Publisher.objects.filter(country="U.S.A.", state_province="CA")
+[<Publisher: Apress>]
+>>> Publisher.objects.filter(name__contains="press")        #相当于mysql中的LIKE，name__contains为双下划线，代表模糊匹配
+[<Publisher: Apress>]
+其他包括icontains(大小写无关的LIKE),startswith和endswith, 还有range(SQLBETWEEN查询）等。
+
+获取单个对象：
+>>> Publisher.objects.get(name="Apress")
+<Publisher: Apress>
+返回了单个对象，而不是列表（更准确的说，QuerySet)。 所以，如果结果是多个对象，会导致抛出异常。
+DoesNotExist 异常 是 Publisher 这个 model 类的一个属性，即 Publisher.DoesNotExist。在你的应用中，你可以捕获并处理这个异常，像这样：
+try:
+    p = Publisher.objects.get(name='Apress')
+except Publisher.DoesNotExist:
+    print "Apress isn't in the database yet."
+else:
+    print "Apress is in the database."
+
+数据排序：
+>>> Publisher.objects.order_by("name")
+[<Publisher: Apress>, <Publisher: O'Reilly>]
+按字母顺序。可以对任意字段进行排序。
+>>> Publisher.objects.order_by("state_province", "address")     以多个字段为标准进行排序（第二个字段会在第一个字段的值相同的情况下被使用到），使用多个参数就可以。
+ [<Publisher: Apress>, <Publisher: O'Reilly>]
+ >>> Publisher.objects.order_by("-name")        #逆向排序，在前面加一个减号 - 前缀。
+[<Publisher: O'Reilly>, <Publisher: Apress>]
+添加默认排序，可以使用class Meta，参见books/models.py中的Publisher类中的class Meta
+
+连锁查询：
+>>> Publisher.objects.filter(country="U.S.A.").order_by("-name")
+[<Publisher: O'Reilly>, <Publisher: Apress>]
+
+限制返回的数据：
+>>> Publisher.objects.order_by('name')[0]       #等于mysql中的LIMIT 1
+<Publisher: Apress>
+>>> Publisher.objects.order_by('name')[0:2]     #相当于python的切片显示
+注意，不支持Python的负索引，如Publisher.objects.order_by('name')[-1]。但可以通过下面方式从尾部取数据blisher.objects.order_by('-name')[0]
+
+更新指定对象值：
+上述的方法
+>>> p = Publisher.objects.get(name='Apress')
+>>> p.name = 'Apress Publishing'
+>>> p.save()
+相当于
+SELECT id, name, address, city, state_province, country, website
+FROM books_publisher
+WHERE name = 'Apress';
+
+UPDATE books_publisher SET
+    name = 'Apress Publishing',
+    address = '2855 Telegraph Ave.',
+    city = 'Berkeley',
+    state_province = 'CA',
+    country = 'U.S.A.',
+    website = 'http://www.apress.com'
+WHERE id = 52;
+即会更新所有数据，如果此数据中的列正被其他进程修改，则造成影响。
+正确且高效的方法是使用update()。相当于MYSQL的
+UPDATE books_publisher
+SET name = 'Apress Publishing'
+WHERE id = 52;
+>>> Publisher.objects.filter(id=52).update(name='Apress Publishing')        #更新条件限定的一条数据
+>>> Publisher.objects.all().update(country='USA')       #更新所有数据
+2       #返回值为受影响的条目。
+
+删除对象：
+>>> p = Publisher.objects.get(name="O'Reilly")
+>>> p.delete()
+>>> Publisher.objects.all()
+[<Publisher: Apress Publishing>]
+同样我们可以在结果集上调用delete()方法同时删除多条记录。
+>>> Publisher.objects.filter(country='USA').delete()
+>>> Publisher.objects.all().delete()        #删除所有数据
+>>> Publisher.objects.all()
+[]
+
+
