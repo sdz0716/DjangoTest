@@ -290,6 +290,7 @@ python manage.py check  检查模型的语法和逻辑是否正确。
 python manage.py makemigrations 用来检测数据库变更和生成数据库迁移文件
 python manage.py sqlmigrate demo 0001 用来把数据库迁移文件转换成数据库语言
 python manage.py migrate 用于执行迁移动作
+注：如果更改models.py内容后，需要重新执行以上命令使数据库内生效。
 
 python manage.py shell 中执行：
 >>> p1 = Publisher(name='Apress', address='2855 Telegraph Avenue',
@@ -407,3 +408,20 @@ WHERE id = 52;
 []
 
 
+【web管理界面】
+首先确认settings中INSTALLED_APPS和MIDDLEWARE中相关contrib插件没有被删改。
+创建超级账户。运行
+python manage.py makemigrations
+python manage.py createsuperuser
+启动服务器。
+
+【修改语言】：
+在settings中的MIDDLEWARE字典中加入'django.middleware.locale.LocaleMiddleware'
+
+【将你的Models加入到Admin管理中】
+编辑app下的admin.py,添加
+from books.models import Publisher, Book, Author
+
+admin.site.register(Publisher)
+admin.site.register(Book)
+admin.site.register(Author)
