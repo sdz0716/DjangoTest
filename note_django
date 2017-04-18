@@ -408,7 +408,7 @@ WHERE id = 52;
 []
 
 
-【web管理界面】
+【【web管理界面】】
 首先确认settings中INSTALLED_APPS和MIDDLEWARE中相关contrib插件没有被删改。
 创建超级账户。运行
 python manage.py makemigrations
@@ -425,3 +425,6 @@ from books.models import Publisher, Book, Author
 admin.site.register(Publisher)
 admin.site.register(Book)
 admin.site.register(Author)
+
+【设置字段可选】
+books/models.py文件里,class Author(models.Model):中email = models.EmailField(blank=True)。这些代码告诉Django，作者的邮箱地址允许输入一个空值。 所有字段都默认blank=False，这使得它们不允许输入空值。
