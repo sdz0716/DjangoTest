@@ -428,3 +428,26 @@ admin.site.register(Author)
 
 【设置字段可选】
 books/models.py文件里,class Author(models.Model):中email = models.EmailField(blank=True)。这些代码告诉Django，作者的邮箱地址允许输入一个空值。 所有字段都默认blank=False，这使得它们不允许输入空值。
+
+【设置日期型和数字型字段可选】
+日期型、时间型和数字型字段不接受空字符串。在Django模块中，你可以通过添加null=True来指定一个字段允许为NULL。如果你想允许一个日期型或数字型字段为空，你需要使用null=True  和 blank=True。
+class Book(models.Model):
+    title = models.CharField(max_length=100)
+    authors = models.ManyToManyField(Author)
+    publisher = models.ForeignKey(Publisher)
+    publication_date = models.DateField(blank=True, null=True)
+上述代码的null=True。
+此操作需要重新生成数据库。
+
+【自定义字段标签】
+在编辑页面中，每个字段的标签都是从模块的字段名称生成的。 规则很简单： 用空格替换下划线；首字母大写。例如：Book模块中publication_date的标签是Publication date。
+自定义标签名方法：email = models.EmailField(blank=True, verbose_name='e-mail' )
+
+【自定义ModelAdmin类】
+在models.py中添加class AuthorAdmin(admin.ModelAdmin):
+    list_display = ('first_name', 'last_name', 'email')，修改admin.site.register(Author, AuthorAdmin)后，刷新浏览器，会在Author标签页中看到出现了设置的标签列，页面顶端看到一个查询栏。
+search_fields = ('first_name', 'last_name'),添加搜索框
+list_filter = ('publication_date', )，页面右侧添加过滤器，为日期型字段提供了快捷过滤方式，它包含：今天、过往七天、当月和今年。
+`` 过滤器`` 同样适用于其它类型的字段，而不单是`` 日期型`` （请在`` 布尔型`` 和`` 外键`` 字段上试试）。当有两个以上值时，过滤器就会显示。
+date_hierarchy = 'publication_date',date_hierarchy接受的是* 字符串* ，而不是元组。因为只能对一个日期型字段进行层次划分。页面中的列表顶端会有一个逐层深入的导航条，效果如图 6-11. 它从可用的年份开始，然后逐层细分到月乃至日。
+ordering = ('-publication_date', ),以publication_date倒序显示

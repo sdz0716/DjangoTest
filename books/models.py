@@ -27,7 +27,7 @@ class Book(models.Model):
     title = models.CharField(max_length=100)
     authors = models.ManyToManyField(Author)
     publisher = models.ForeignKey(Publisher)
-    publication_date = models.DateField()
+    publication_date = models.DateField(blank=True, null=True)
 
     def __str__(self):
         return self.title
