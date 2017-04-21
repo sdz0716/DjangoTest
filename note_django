@@ -451,3 +451,66 @@ list_filter = ('publication_date', )，页面右侧添加过滤器，为日期�
 `` 过滤器`` 同样适用于其它类型的字段，而不单是`` 日期型`` （请在`` 布尔型`` 和`` 外键`` 字段上试试）。当有两个以上值时，过滤器就会显示。
 date_hierarchy = 'publication_date',date_hierarchy接受的是* 字符串* ，而不是元组。因为只能对一个日期型字段进行层次划分。页面中的列表顶端会有一个逐层深入的导航条，效果如图 6-11. 它从可用的年份开始，然后逐层细分到月乃至日。
 ordering = ('-publication_date', ),以publication_date倒序显示
+
+【自定义编辑表单】
+在admin.py中的类中修改
+fields = ('title', 'authors', 'publisher', 'publication_date')，编辑表单将按照指定的顺序显示各字段。
+fields = ('title', 'authors', 'publisher')，隐藏了'publication_date'，可以排除一些不想被其他人编辑的fields。在编辑页面就无法对publication date进行改动。
+filter_horizontal = ('authors',),对‘多对多选项’优化，当选项过多时，方便选中所需项。只能用在多对多字段 上, 而不能用于 ForeignKey字段。（filter_vertical用处类似，为竖排展现外观）
+raw_id_fields = ('publisher',),修改外键默认的下拉框展现方式，如数据过多，加载下拉框时间过长，使用该参数可以改为文本框，输入键值ID即可。
+
+【用户、用户组和权限】
+界面上配置
+
+
+##表单##
+介绍对用户通过表单提交的数据进行访问、有效性检查以及其它处理
+
+【从Request对象中获取数据】
+HttpRequest对象包含当前请求URL的一些信息：
+属性/方法 	说明 	举例
+request.path 	除域名以外的请求路径，以正斜杠开头 	"/hello/"
+request.get_host() 	主机名（比如，通常所说的域名） 	"127.0.0.1:8000" or "www.example.com"
+request.get_full_path() 	请求路径，可能包含查询字符串 	"/hello/?print=true"
+request.is_secure() 	如果通过HTTPS访问，则此方法返回True， 否则返回False 	True 或者 False
+
+在view函数里，要始终用这个属性或方法来得到URL，而不要手动输入：
+# BAD!
+def current_url_view_bad(request):
+    return HttpResponse("Welcome to the page at /current/")
+
+# GOOD
+def current_url_view_good(request):
+    return HttpResponse("Welcome to the page at %s" % request.path)
+
+request.META 是一个Python字典，包含了所有本次HTTP请求的Header信息，比如用户IP地址和用户Agent（通常是浏览器的名称和版本号）。即基本的元数据。 注意，Header信息的完整列表取决于用户所发送的Header信息和服务器端设置的Header信息。 这个字典中几个常见的键值有：
+    HTTP_REFERER，进站前链接网页，如果有的话。 （请注意，它是REFERRER的笔误。）
+    HTTP_USER_AGENT，用户浏览器的user-agent字符串，如果有的话。 例如： "Mozilla/5.0 (X11; U; Linux i686; fr-FR; rv:1.8.1.17) Gecko/20080829 Firefox/2.0.0.17" .
+    REMOTE_ADDR 客户端IP，如："12.345.67.89" 。(如果申请是经过代理服务器的话，那么它可能是以逗号分割的多个IP地址，如："12.345.67.89,23.456.78.90" 。
+
+因为 request.META 是一个普通的Python字典，因此当你试图访问一个不存在的键时，会触发一个KeyError异常。
+# BAD!
+def ua_display_bad(request):
+    ua = request.META['HTTP_USER_AGENT']  # Might raise KeyError!
+    return HttpResponse("Your browser is %s" % ua)
+
+# GOOD (VERSION 1)
+def ua_display_good1(request):
+    try:
+        ua = request.META['HTTP_USER_AGENT']
+    except KeyError:
+        ua = 'unknown'
+    return HttpResponse("Your browser is %s" % ua)
+
+# GOOD (VERSION 2)
+def ua_display_good2(request):
+    ua = request.META.get('HTTP_USER_AGENT', 'unknown')
+    return HttpResponse("Your browser is %s" % ua)
+
+request.META返回的所有数据，可见Django/views.py下的def display_meta(request)即相关urls.py中添加的对应url
+
+【提交的数据信息】
+“request.GET和request.POST是类字典对象”,request.GET和request.POST都有get()、keys()和values()方法，也拥有一些普通的字典对象所没有的方法。
+POST数据是来自HTML中的〈form〉标签提交的，而GET数据可能来自〈form〉提交也可能是URL中的查询字符串(the query string)。
+
+【】

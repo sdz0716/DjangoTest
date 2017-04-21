@@ -35,3 +35,11 @@ def hours_ahead(request, offset):
     dt = datetime.datetime.now() + datetime.timedelta(hours=offset)
     # html = '<html><body>In %s hour(s), it will be %s.</body></html>' % (offset, dt)
     return render_to_response('hours_ahead.html', {'hour_offset': offset, 'next_time': dt})
+
+def display_meta(request):
+    values = request.META.items()
+    values = sorted(values)
+    # html = []
+    # for k, v in values:
+    #     html.append('<tr><td>%s</td></td>%s</td></tr>' % (k, v))
+    return render_to_response('display_meta.html', {'values':values})
