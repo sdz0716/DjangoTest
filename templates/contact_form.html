@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Contact us</title>
+</head>
+<body>
+    <h1>Contact us</h1>
+
+    {% if error %}
+        <ul>
+            {% for err in error %}
+            <li>{{ err }}</li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    <from action="/contact/" method="post">
+{#        <p>Subject:<input type="text" name="subject"></p>#}
+{#        <p>Your e-mail (optional):<input type="text" name="email"> </p>#}
+{#        <p>Message:<textarea name="message" rows="10" cols="50"></textarea> </p>#}
+        <p>Subject:<input type="text" name="{{ subject }}"></p>
+        <p>Your e-mail (optional):<input type="text" name="{{ email }}"> </p>
+        <p>Message:<textarea name="{{ message }}" rows="10" cols="50"></textarea> </p>
+        <input type="submit" value="Submit">
+    </from>
+</body>
+</html>
+
+{# 优化一，见contact/views.py中注解 #}

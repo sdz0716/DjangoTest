@@ -5,7 +5,13 @@
     <title>Search</title>
 </head>
 <body>
-    <form action="/search/" method="get">
+    {% if error %}
+{#        <p style="color: red;">Please sumbit a search term 20 characters or shorter.</p>#}
+        {% for err in error %}
+        <li>{{ err }}</li>
+        {% endfor %}
+    {% endif %}
+    <form action="" method="get">
         <input type="text" name="q">
         <input type="submit" value="Search">
     </form>

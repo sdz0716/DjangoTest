@@ -514,6 +514,7 @@ request.META返回的所有数据，可见Django/views.py下的def display_meta(
 【提交的数据信息】
 “request.GET和request.POST是类字典对象”,request.GET和request.POST都有get()、keys()和values()方法，也拥有一些普通的字典对象所没有的方法。
 POST数据是来自HTML中的〈form〉标签提交的，而GET数据可能来自〈form〉提交也可能是URL中的查询字符串(the query string)。
+确认request.method的值是’POST’。用户浏览表单时这个值并不存在，当且仅当表单被提交时这个值才出现。
 
 【简单的例子】
 books/views.py中search_form和search方法，templates中的search_form.html模板，制作了一个search框功能。
@@ -521,3 +522,8 @@ books/views.py中search_form和search方法，templates中的search_form.html模
 【POST与GET之间有什么不同？】
 当我们提交表单仅仅需要获取数据时就可以用GET； 而当我们提交表单时需要更改服务器数据的状态，或者说发送e-mail，或者其他不仅仅是获取并显示数据的时候就使用POST。 在这个搜索书籍的例子里，我们使用GET，因为这个查询不会更改服务器数据的状态。
 
+【验证功能的表单】
+见contact/例子
+
+【Form类】
+Django带有一个form库，称为django.forms，这个库可以处理我们本章所提到的包括HTML表单显示以及验证。
