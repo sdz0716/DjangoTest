@@ -527,3 +527,132 @@ books/views.py中search_form和search方法，templates中的search_form.html模
 
 【Form类】
 Django带有一个form库，称为django.forms，这个库可以处理我们本章所提到的包括HTML表单显示以及验证。
+##用法介绍##
+from contact.forms import ContactForm   #已手动编辑的文件和类
+f = ContactForm()
+print(f)
+<tr><th><label for="id_subject">Subject:</label></th><td><input type="text" name="subject" required id="id_subject" /></td></tr>
+<tr><th><label for="id_email">Email:</label></th><td><input type="email" name="email" id="id_email" /></td></tr>
+<tr><th><label for="id_message">Message:</label></th><td><input type="text" name="message" required id="id_message" /></td></tr>
+
+##显示个别字段
+print(f['subject'])
+    out:<input type="text" name="subject" required id="id_subject" />
+
+##校验数据
+f = ContactForm({'subject': 'Hello', 'email': 'adrian@example.com', 'message': 'Nice site!'})   #创建一个新的对Form象，并且传入一个与定义匹配的字典类型数据
+
+f.is_bound
+    Out[8]: True
+
+f.is_valid()    #调用任何绑定form的is_valid()方法，就可以知道它的数据是否合法。如字段属性为required=False，则即使该字段为空也合法。
+    out:True
+
+f['message'].errors：    #查看每个字段的出错消息，如[u'This field is required.']
+    out:[u'xxxxx']
+
+f = ContactForm({'subject': 'Hello', 'message': ''})    #每一个邦定Form实体都有一个errors属性，它为你提供了一个字段与错误消息相映射的字典表。
+f.errors
+    out:{'message': [u'This field is required.']}
+
+如果一个Form实体的数据是合法的，它就会有一个可用的cleaned_data属性。 这是一个包含干净的提交数据的字典。 Django的form框架不但校验数据，它还会把它们转换成相应的Python类型数据，这叫做清理数据。
+f = ContactForm({subject': Hello, email: adrian@example.com, message: Nice site!})
+f.is_valid()
+    out:True
+f.cleaned_data
+    out:{message': uNice site!, email: uadrian@example.com, subject: uHello}
+contact form只涉及字符串类型，它们会被清理成Unicode对象。如果我们使用整数型或日期型，form框架会确保方法使用合适的Python整数型或datetime.date型对象。
+
+##在视图中使用Form对象
+见contact/views.py和templates/contact_form_new.html
+
+##改变字段显示
+contact/forms.py中messge中的参数。
+forms框架把每一个字段的显示逻辑分离到一组部件（widget）中。 每一个字段类型都拥有一个默认的部件，我们也可以容易地替换掉默认的部件，或者提供一个自定义的部件。
+
+##设置最大长度
+contact/forms.py中messge中的参数。
+subject = forms.CharField(max_length=100)
+使subject限制在100个字符以内。 为此，仅需为CharField提供max_length参数.
+选项min_length参数同样可用。
+
+##设置初始值
+contact/views.py中form = ContactForm(initial={'subject': 'i love web'})参数。
+请注意，传入* 初始值* 数据和传入数据以* 绑定* 表单是有区别的。 最大的区别是，如果仅传入* 初始值* 数据，表单是unbound的，那意味着它没有错误消息。
+
+##自定义校验规则
+见contact/forms.py中的方法。
+form系统自动寻找匹配的函数方法，该方法名称以clean_开头，并以字段名称结束。 如果有这样的方法，它将在校验时被调用。
+clean_message()方法将在指定字段的默认校验逻辑执行* 之后* 被调用。（本例中，在必填CharField这个校验逻辑之后。）因为字段数据已经被部分处理，所以它被从self.cleaned_data中提取出来了。同样，我们不必担心数据是否为空，因为它已经被校验过了。
+
+##CSRF token missing or incorrect
+views.py中添加
+from django.template import RequestContext
+...
+return render(request, param1, param2)
+contact_form_new.html中添加
+<form action="" method="post">
+    {% csrf_token %}    #<form>标签后添加{% csrf_token %}
+具体见例子contact/views.py,templates/contact_form_new.html
+
+##指定标签
+contact/forms.py中email = forms.EmailField(required=False, label='Your email address')
+可以自定义字段的标签。 仅需使用label
+
+##定制Form设计
+修改form的显示的最快捷的方式是使用CSS。
+虽然，自动生成HTML是很方便的，但是在某些时候，你会想覆盖默认的显示。 {{form.as_table}}和其它的方法在开发的时候是一个快捷的方式，form的显示方式也可以在form中被方便地重写。
+每一个字段部件(<input type=”text”>, <select>, <textarea>, 或者类似)都可以通过访问{{form.字段名}}进行单独的渲染。
+<html>
+<head>
+    <title>Contact us</title>
+</head>
+<body>
+    <h1>Contact us</h1>
+
+    {% if form.errors %}
+        <p style="color: red;">
+            Please correct the error{{ form.errors|pluralize }} below.
+        </p>
+    {% endif %}
+
+    <form action="" method="post">
+        <div class="field">
+            {{ form.subject.errors }}
+            <label for="id_subject">Subject:</label>
+            {{ form.subject }}
+        </div>
+        <div class="field">
+            {{ form.email.errors }}
+            <label for="id_email">Your e-mail address:</label>
+            {{ form.email }}
+        </div>
+        <div class="field">
+            {{ form.message.errors }}
+            <label for="id_message">Message:</label>
+            {{ form.message }}
+        </div>
+        <input type="submit" value="Submit">
+    </form>
+</body>
+</html>
+{{ form.message.errors }} 会在 <ul class="errorlist"> 里面显示，如果字段是合法的，或者form没有被绑定，就显示一个空字符串。 我们还可以把 form.message.errors 当作一个布尔值或者当它是list在上面做迭代， 例如：
+
+<div class="field{% if form.message.errors %} errors{% endif %}">
+    {% if form.message.errors %}
+        <ul>
+        {% for error in form.message.errors %}
+            <li><strong>{{ error }}</strong></li>
+        {% endfor %}
+        </ul>
+    {% endif %}
+    <label for="id_message">Message:</label>
+    {{ form.message }}
+</div>
+
+
+##高级视图和URL配置##
+
+【URLconf 技巧】
+1.10以上版本取消了字符串表示url的功能。
+

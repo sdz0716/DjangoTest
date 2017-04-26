@@ -16,15 +16,15 @@ Including another URLconf
 from django.conf.urls import url
 from django.contrib import admin
 from Django.views import *
-from books import views
-# from contact import views
+# from books import views
+from contact import views
 urlpatterns = [
     url(r'^admin/', admin.site.urls),
     url(r'^hello/$', hello),
     url(r'^time/$', current_datetime),
     url(r'^time/plus/(\d{1,2})/$', hours_ahead),
     url(r'^display_meta/$', display_meta),
-    url(r'^search-form/$', views.search_form),
-    url(r'^search/$', views.search),
-    # url(r'^contact/$', views.contact)
+    # url(r'^search-form/$', views.search_form),
+    # url(r'^search/$', views.search),
+    url(r'^contact/$', views.contact),
  ]
