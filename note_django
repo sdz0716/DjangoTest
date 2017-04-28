@@ -656,3 +656,224 @@ contact/forms.py中email = forms.EmailField(required=False, label='Your email ad
 【URLconf 技巧】
 1.10以上版本取消了字符串表示url的功能。
 
+##使用命名组
+命名的正则表达式组的语法是 (?P<name>pattern) ，这里 name 是组的名字，而 pattern 是匹配的某个模式。
+使用无名组的 URLconf 的例子:
+from django.conf.urls.defaults import *
+from mysite import views
+
+urlpatterns = patterns('',
+    (r'^articles/(\d{4})/$', views.year_archive),
+    (r'^articles/(\d{4})/(\d{2})/$', views.month_archive),
+)
+下面是相同的 URLconf，使用命名组进行了重写:
+from django.conf.urls.defaults import *
+from mysite import views
+
+urlpatterns = patterns('',
+    (r'^articles/(?P<year>\d{4})/$', views.year_archive),
+    (r'^articles/(?P<year>\d{4})/(?P<month>\d{2})/$', views.month_archive),
+)
+
+差别： 取的值是以关键字参数的方式而不是以位置参数的方式传递给视图函数的。
+例如，如果不带命名组，请求 /articles/2006/03/ 将会等同于这样的函数调用：
+month_archive(request, '2006', '03')
+而带命名组，同样的请求就会变成这样的函数调用：
+month_archive(request, year='2006', month='03')
+
+注意：如果在URLconf中使用命名组，那么命名组和非命名组是不能同时存在于同一个URLconf的模式中的。 如果你这样做，Django不会抛出任何错误，但你可能会发现你的URL并没有像你预想的那样匹配正确。
+
+##传递额外的参数到视图函数中
+比如说，你有两个视图，它们的内容是一致的，除了它们所用的模板不太一样。
+# urls.py
+
+from django.conf.urls.defaults import *
+from mysite import views
+
+urlpatterns = patterns('',
+    (r'^foo/$', views.foobar_view, {'template_name': 'template1.html'}),
+    (r'^bar/$', views.foobar_view, {'template_name': 'template2.html'}),
+)
+
+# views.py
+
+from django.shortcuts import render_to_response
+from mysite.models import MyModel
+
+def foobar_view(request, template_name):
+    m_list = MyModel.objects.filter(is_new=True)
+    return render_to_response(template_name, {'m_list': m_list})
+
+URLconf指定了 template_name ，而视图函数会把它当成另一个参数。
+
+##伪造捕捉到的URLconf值
+urlpatterns = patterns('',
+    (r'^mydata/(?P<month>\w{3})/(?P<day>\d\d)/$', views.my_view),
+)
+然后视图函数的原型看起来会是：
+def my_view(request, month, day):
+    # ....
+比如你可能会想增加这样一个URL， /mydata/birthday/ ， 这个URL等价于 /mydata/jan/06/ 。这时你可以这样利用额外URLconf参数：
+urlpatterns = patterns('',
+    (r'^mydata/birthday/$', views.my_view, {'month': 'jan', 'day': '06'}),
+    (r'^mydata/(?P<month>\w{3})/(?P<day>\d\d)/$', views.my_view),
+)
+不用改变你的视图函数。 视图函数只会关心它 获得 了 参数，它不会去管这些参数到底是捕捉回来的还是被额外提供的。
+
+##创建一个通用视图
+以开始创作高抽象的视图。 更具体地说，比如这个视图显示一系列的 Event 对象，那个视图显示一系列的 BlogEntry 对象，并意识到它们都是一个用来显示一系列对象的视图的特例，而对象的类型其实就是一个变量。
+以这段代码作为例子：
+
+# urls.py
+
+from django.conf.urls.defaults import *
+from mysite import views
+
+urlpatterns = patterns('',
+    (r'^events/$', views.event_list),
+    (r'^blog/entries/$', views.entry_list),
+)
+
+# views.py
+
+from django.shortcuts import render_to_response
+from mysite.models import Event, BlogEntry
+
+def event_list(request):
+    obj_list = Event.objects.all()
+    return render_to_response('mysite/event_list.html', {'event_list': obj_list})
+
+def entry_list(request):
+    obj_list = BlogEntry.objects.all()
+    return render_to_response('mysite/blogentry_list.html', {'entry_list': obj_list})
+
+这两个视图做的事情实质上是一样的： 显示一系列的对象。 让我们把它们显示的对象的类型抽象出来：
+
+# urls.py
+
+from django.conf.urls.defaults import *
+from mysite import models, views
+
+urlpatterns = patterns('',
+    (r'^events/$', views.object_list, {'model': models.Event}),
+    (r'^blog/entries/$', views.object_list, {'model': models.BlogEntry}),
+)
+
+# views.py
+
+from django.shortcuts import render_to_response
+
+def object_list(request, model):
+    obj_list = model.objects.all()
+    template_name = 'mysite/%s_list.html' % model.__name__.lower()
+    return render_to_response(template_name, {'object_list': obj_list})
+
+我们通过 model 参数直接传递了模型类。 额外URLconf参数的字典是可以传递任何类型的对象，而不仅仅只是字符串。
+我们使用 model.__name__.lower() 来决定模板的名字。 每个Python的类都有一个 __name__ 属性返回类名。 这特性在当我们直到运行时刻才知道对象类型的这种情况下很有用。 比如， BlogEntry 类的 __name__ 就是字符串 'BlogEntry' 。
+
+##提供视图配置选项
+一个应用中比较常见的可供配置代码是模板名字：
+
+def my_view(request, template_name):
+    var = do_something()
+    return render_to_response(template_name, {'var': var})
+
+##使用缺省视图参数
+# urls.py
+
+from django.conf.urls.defaults import *
+from mysite import views
+
+urlpatterns = patterns('',
+    (r'^blog/$', views.page),
+    (r'^blog/page(?P<num>\d+)/$', views.page),
+)
+
+# views.py
+
+def page(request, num='1'):
+    # Output the appropriate page of blog entries, according to num.
+在这里，两个URL表达式都指向了同一个视图 views.page ，但是第一个表达式没有传递任何参数。 如果匹配到了第一个样式， page() 函数将会对参数 num 使用默认值 "1" ，如果第二个表达式匹配成功， page() 函数将使用正则表达式传递过来的num的值。
+
+##特殊情况下的视图
+利用URLconf从顶向下的解析顺序这个特点：
+urlpatterns = patterns('',
+    # ...
+    ('^auth/user/add/$', views.user_add_stage),
+    ('^([^/]+)/([^/]+)/add/$', views.add_stage),
+    # ...
+)
+象 /auth/user/add/ 的请求将会被 user_add_stage 视图处理。 尽管URL也匹配第二种模式，它会先匹配上面的模式。
+
+##包含其他URLconf
+urlpatterns = patterns('',
+    (r'^weblog/', include('mysite.blog.urls')),
+    (r'^photos/', include('mysite.photos.urls')),
+    (r'^about/$', 'mysite.views.about'),
+)
+这里就是被包含的URLconf mysite.blog.urls ：
+from django.conf.urls.defaults import *
+
+urlpatterns = patterns('',
+    (r'^(\d\d\d\d)/$', 'mysite.blog.views.year_detail'),
+    (r'^(\d\d\d\d)/(\d\d)/$', 'mysite.blog.views.month_detail'),
+)
+
+/weblog/2007/ ：在第一个URLconf中，模式 r'^weblog/' 被匹配。 因为它是一个 include() ，Django将截掉所有匹配的文本，在这里是 'weblog/' 。URL剩余的部分是 2007/ ， 将在 mysite.blog.urls 这个URLconf的第一行中被匹配到。 URL仍存在的部分为 2007/ ,与第一行的 mysite.blog.urlsURL设置相匹配。
+/weblog//2007/(包含两个斜杠) 在第一个URLconf中,r’^weblog/’匹配 因为它有一个include(),django去掉了匹配的部,在这个例子中匹配的部分是’weblog/’ 剩下的部分是/2007/ (最前面有一个斜杠),不匹配mysite.blog.urls中的任何一行.
+/about/ : 这个匹配第一个URLconf中的 mysite.views.about 视图
+
+##捕获的参数如何和include()协同工作
+一个被包含的URLconf接收任何来自parent URLconfs的被捕获的参数，比如:
+
+# root urls.py
+
+from django.conf.urls.defaults import *
+
+urlpatterns = patterns('',
+    (r'^(?P<username>\w+)/blog/', include('foo.urls.blog')),
+)
+
+# foo/urls/blog.py
+
+from django.conf.urls.defaults import *
+
+urlpatterns = patterns('',
+    (r'^$', 'foo.views.blog_index'),
+    (r'^archive/$', 'foo.views.blog_archive'),
+)
+这个被捕获的参数 总是 传递到被包含的URLconf中的 每一 行，不管那些行对应的视图是否需要这些参数。
+
+
+##模板高级进阶##
+模板 渲染 就是是通过从context获取值来替换模板中变量并执行所有的模板标签。
+
+【Context处理器】
+待补充。
+
+【html自动转意】
+在django里默认情况下，每一个模板自动转意每一个变量标签的输出。
+
+##关闭方法：
+对于单独的变量，用safe过滤器为单独的变量关闭自动转意。
+This will not be escaped: {{ data|safe }}
+
+对于模板块，,用标签autoescape来包装整个模板(或者模板中常用的部分)。
+{% autoescape off %}
+    Hello {{ name }}
+{% endautoescape %}
+autoescape 标签有两个参数on和off 有时,你可能想阻止一部分自动转意,对另一部分自动转意。
+Auto-escaping is on by default. Hello {{ name }}
+
+{% autoescape off %}
+    This will not be auto-escaped: {{ data }}.
+
+    Nor this: {{ other_data }}
+    {% autoescape on %}
+        Auto-escaping applies again: {{ name }}
+    {% endautoescape %}
+{% endautoescape %}
+
+【模板加载的内幕】
+
+
