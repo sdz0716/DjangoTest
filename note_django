@@ -874,6 +874,228 @@ Auto-escaping is on by default. Hello {{ name }}
     {% endautoescape %}
 {% endautoescape %}
 
-【模板加载的内幕】
+【创建一个模板库】
+创建一个模板库分两步走：
+第一，决定模板库应该放在哪个Django应用下。 如果你通过 manage.py startapp 创建了一个应用，你可以把它放在那里，或者你可以为模板库单独创建一个应用。 我们更推荐使用后者，因为你的filter可能在后来的工程中有用。
+无论你采用何种方式，请确保把你的应用添加到 INSTALLED_APPS 中。 我们稍后会解释这一点。
+第二，在适当的Django应用包里创建一个 templatetags 目录。 这个目录应当和 models.py 、 views.py 等处于同一层次。    例如：
+books/
+    __init__.py
+    models.py
+    templatetags/
+    views.py
+
+    在 templatetags 中创建两个空文件： 一个 __init__.py （告诉Python这是 一个包含了Python代码的包）和一个用来存放你自定义的标签/过滤器定义的文件。 第二个文件的名字稍后将用来加载标签。 例如，如果你的自定义标签/过滤器在一个叫作 poll_extras.py 的文件中，你需要在模板中写入如下内容：
+{% load poll_extras %}
+
+【自定义模板过滤器】
+自定义过滤器就是有一个或两个参数的Python函数:
+    (输入)变量的值
+    参数的值， 可以是默认值或者完全留空
+例如，在过滤器 {{ var|foo:"bar" }} 中 ，过滤器 foo 会被传入变量 var 和默认参数 bar。
+
+下面是一个完整的模板库的例子，它包含一个 cut 过滤器：
+
+from django import template
+
+register = template.Library()
+
+@register.filter(name='cut')
+def cut(value, arg):
+    return value.replace(arg, '')
+
+【自定义模板标签】
+例如，写一个显示当前日期的模板标签：{% current_time %}。在这个例子里，标签应该这样使用：
+<p>The time is {% current_time "%Y-%m-%d %I:%M %p" %}.</p>
+这个函数的分析器会获取参数并创建一个 Node 对象:
+from django import template
+
+register = template.Library()
+
+def do_current_time(parser, token):
+    try:
+        # split_contents() knows not to split quoted strings.
+        tag_name, format_string = token.split_contents()
+    except ValueError:
+        msg = '%r tag requires a single argument' % token.split_contents()[0]
+        raise template.TemplateSyntaxError(msg)
+    return CurrentTimeNode(format_string[1:-1])
+这里需要说明的地方很多：
+    每个标签编译函数有两个参数，parser和token。parser是模板解析器对象。 我们在这个例子中并不使用它。 token是正在被解析的语句。
+    token.contents 是包含有标签原始内容的字符串。 在我们的例子中，它是 'current_time "%Y-%m-%d %I:%M %p"' 。
+    token.split_contents() 方法按空格拆分参数同时保证引号中的字符串不拆分。 应该避免使用 token.contents.split() （仅使用Python的标准字符串拆分）。 它不够健壮，因为它只是简单的按照所有空格进行拆分，包括那些引号引起来的字符串中的空格。
+    这个函数可以抛出 django.template.TemplateSyntaxError ，这个异常提供所有语法错误的有用信息。
+    不要把标签名称硬编码在你的错误信息中，因为这样会把标签名称和你的函数耦合在一起。 token.split_contents()[0]总是记录标签的名字，就算标签没有任何参数。
+    这个函数返回一个 CurrentTimeNode （稍后我们将创建它），它包含了节点需要知道的关于这个标签的全部信息。 在这个例子中，它只是传递了参数 "%Y-%m-%d %I:%M %p" 。模板标签开头和结尾的引号使用 format_string[1:-1] 除去。
+    模板标签编译函数 必须 返回一个 Node 子类，返回其它值都是错的。
+
+【编写模板节点】
+编写自定义标签的第二步就是定义一个拥有 render() 方法的 Node 子类。 继续前面的例子，我们需要定义 CurrentTimeNode ：
+import datetime
+
+class CurrentTimeNode(template.Node):
+    def __init__(self, format_string):
+        self.format_string = str(format_string)
+
+    def render(self, context):
+        now = datetime.datetime.now()
+        return now.strftime(self.format_string)
+
+【注册标签】
+最后，你需要用你模块的Library 实例注册这个标签。 注册自定义标签与注册自定义过滤器非常类似（如前文所述）。 只需实例化一个 template.Library 实例然后调用它的 tag() 方法。 例如：
+
+register.tag('current_time', do_current_time)
+
+tag() 方法需要两个参数:
+    模板标签的名字（字符串）。
+    编译函数。
+
+也可以使用 register.tag装饰器：
+
+@register.tag(name="current_time")
+def do_current_time(parser, token):
+    # ...
+
+@register.tag
+def shout(parser, token):
+    # ...
+
+如果你像在第二个例子中那样忽略 name 参数的话，Django会使用函数名称作为标签名称。
+
+【在上下文中设置变量】
+由模板标签来指定需要设定的变量的名称，就像这样：
+
+{% get_current_time "%Y-%M-%d %I:%M %p" as my_current_time %}
+<p>The current time is {{ my_current_time }}.</p>
+
+为此，你需要重构编译函数和 Node 类，如下所示：
+
+import re
+
+class CurrentTimeNode3(template.Node):
+    def __init__(self, format_string, var_name):
+        self.format_string = str(format_string)
+        self.var_name = var_name
+
+    def render(self, context):
+        now = datetime.datetime.now()
+        context[self.var_name] = now.strftime(self.format_string)
+        return ''
+
+def do_current_time(parser, token):
+    # This version uses a regular expression to parse tag contents.
+    try:
+        # Splitting by None == splitting by spaces.
+        tag_name, arg = token.contents.split(None, 1)
+    except ValueError:
+        msg = '%r tag requires arguments' % token.contents[0]
+        raise template.TemplateSyntaxError(msg)
+
+    m = re.search(r'(.*?) as (\w+)', arg)
+    if m:
+        fmt, var_name = m.groups()
+    else:
+        msg = '%r tag had invalid arguments' % tag_name
+        raise template.TemplateSyntaxError(msg)
+
+    if not (fmt[0] == fmt[-1] and fmt[0] in ('"', "'")):
+        msg = "%r tag's argument should be in quotes" % tag_name
+        raise template.TemplateSyntaxError(msg)
+
+    return CurrentTimeNode3(fmt[1:-1], var_name)
+
+【分析直至另一个模板标签】
+模板标签可以像包含其它标签的块一样工作（想想 {% if %} 、 {% for %} 等）。 要创建一个这样的模板标签，在你的编译函数中使用 parser.parse() 。
+
+【分析直至另外一个模板标签并保存内容】
+在前一个例子中， do_comment() 抛弃了{% comment %} 和 {% endcomment %} 之间的所有内容。当然也可以修改和利用下标签之间的这些内容。
+
+【简单标签的快捷方式】
+许多模板标签接收单一的字符串参数或者一个模板变量引用，然后独立地根据输入变量和一些其它外部信息进行处理并返回一个字符串。 例如，我们先前写的current_time标签就是这样一个例子。 我们给定了一个格式化字符串，然后它返回一个字符串形式的时间。
+
+为了简化这类标签，Django提供了一个帮助函数simple_tag。这个函数是django.template.Library的一个方法，它接受一个只有一个参数的函数作参数，把它包装在render函数和之前提及过的其他的必要单位中，然后通过模板系统注册标签。
+
+【包含标签】
+另外一类常用的模板标签是通过渲染 其他 模板显示数据的。 比如说，Django的后台管理界面，它使用了自定义的模板标签来显示新增/编辑表单页面下部的按钮。 那些按钮看起来总是一样的，但是链接却随着所编辑的对象的不同而改变。 这就是一个使用小模板很好的例子，这些小模板就是当前对象的详细信息。
+
+【编写自定义模板加载器】
+Djangos 内置的模板加载器（在先前的模板加载内幕章节有叙述）通常会满足你的所有的模板加载需求，但是如果你有特殊的加载需求的话，编写自己的模板加载器也会相当简单。 比如：你可以从数据库中，或者利用Python的绑定直接从Subversion库中，更或者从一个ZIP文档中加载模板。
 
 
+##数据模型高级进阶##
+
+【访问外键(Foreign Key)值】
+当你获取一个ForeignKey 字段时,你会得到相关的数据模型对象。 例如：
+>>> b = Book.objects.get(id=50)
+>>> b.publisher
+<Publisher: Apress Publishing>
+>>> b.publisher.website
+u'http://www.apress.com/'
+
+对于用`` ForeignKey`` 来定义的关系来说，在关系的另一端也能反向的追溯回来，只不过由于不对称性的关系而稍有不同。 通过一个`` publisher`` 对象，直接获取 books ，用 publisher.book_set.all() ，如下：
+>>> p = Publisher.objects.get(name='Apress Publishing')
+>>> p.book_set.all()
+[<Book: The Django Book>, <Book: Dive Into Python>, ...]
+
+【访问多对多值(Many-to-Many Values)】
+多对多和外键工作方式相同，只不过我们处理的是QuerySet而不是模型实例。 例如,这里是如何查看书籍的作者：
+
+>>> b = Book.objects.get(id=50)
+>>> b.authors.all()
+[<Author: Adrian Holovaty>, <Author: Jacob Kaplan-Moss>]
+>>> b.authors.filter(first_name='Adrian')
+[<Author: Adrian Holovaty>]
+>>> b.authors.filter(first_name='Adam')
+[]
+
+反向查询也可以。 要查看一个作者的所有书籍,使用author.book_set ,就如这样:
+>>> a = Author.objects.get(first_name='Adrian', last_name='Holovaty')
+>>> a.book_set.all()
+[<Book: The Django Book>, <Book: Adrian's Other Book>]
+
+这里,就像使用 ForeignKey字段一样，属性名book_set是在数据模型(model)名后追加_set。
+
+【更改数据库模式(Database Schema)】
+如果你新增或修改数据模型里的字段,或是删除了一个数据模型，你需要手动在数据库里进行相应的修改。 这段将解释了具体怎么做。
+
+添加字段：
+当要向一个产品设置表(或者说是model)添加一个字段的时候，要使用的技巧是利用Django不关心表里是否包含model里所没有的列的特性。 策略就是现在数据库里加入字段，然后同步Django的模型以包含新字段。
+首先，进入开发环境(也就是说，不是在发布环境里)：
+    在你的模型里添加字段。
+    运行 manage.py sqlall [yourapp] 来测试模型新的 CREATE TABLE 语句。 注意为新字段的列定义。
+    开启你的数据库的交互命令界面(比如, psql 或mysql , 或者可以使用 manage.py dbshell )。 执行 ALTER TABLE 语句来添加新列。
+    使用Python的manage.py shell，通过导入模型和选中表单(例如， MyModel.objects.all()[:5] )来验证新的字段是否被正确的添加 ,如果一切顺利,所有的语句都不会报错。
+然后在你的产品服务器上再实施一遍这些步骤。
+    启动数据库的交互界面。
+    执行在开发环境步骤中，第三步的ALTER TABLE语句。
+    将新的字段加入到模型中。 如果你使用了某种版本控制工具，并且在第一步中，已经提交了你在开发环境上的修改，现在，可以在生产环境中更新你的代码了（例如，如果你使用Subversion，执行svn update。
+    重新启动Web server，使修改生效。
+
+删除字段：
+步骤：删除字段，然后重新启动你的web服务器。
+ALTER TABLE books_book DROP COLUMN num_pages;
+
+删除多对多关联字段：
+从你的模型中删除ManyToManyField，然后重启web服务器。
+DROP TABLE books_book_authors;
+
+删除模型：
+从文件中删除你想要删除的模型，然后重启web 服务器models.py
+DROP TABLE books_book;
+
+【Managers】
+模块manager是一个对象，Django模块通过它进行数据库查询。
+增加额外的manager方法是为模块添加表级功能的首选办法。
+例如,我们为Book模型定义了一个title_count()方法，它需要一个关键字，返回包含这个关键字的书的数量。
+class BookManager(models.Manager):
+    def title_count(self, keyword):
+        return self.filter(title__icontains=keyword).count()
+
+>>> Book.objects.title_count('django')
+4
+
+【修改初始Manager QuerySets】
+manager的基本QuerySet返回系统中的所有对象。 例如,`` Book.objects.all()`` 返回数据库book中的所有书本。
+我们可以通过覆盖Manager.get_query_set()方法来重写manager的基本QuerySet。 get_query_set()按照你的要求返回一个QuerySet。
+
+【模型方法】
