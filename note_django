@@ -1099,3 +1099,509 @@ manager的基本QuerySet返回系统中的所有对象。 例如,`` Book.objects
 我们可以通过覆盖Manager.get_query_set()方法来重写manager的基本QuerySet。 get_query_set()按照你的要求返回一个QuerySet。
 
 【模型方法】
+为了给你的对像添加一个行级功能，那就定义一个自定义方法。 有鉴于manager经常被用来用一些整表操作（table-wide），模型方法应该只对特殊模型实例起作用。
+这个模型有一些自定义方法：
+
+from django.contrib.localflavor.us.models import USStateField
+from django.db import models
+
+class Person(models.Model):
+    first_name = models.CharField(max_length=50)
+    last_name = models.CharField(max_length=50)
+    birth_date = models.DateField()
+    address = models.CharField(max_length=100)
+    city = models.CharField(max_length=50)
+    state = USStateField() # Yes, this is U.S.-centric...
+
+    def baby_boomer_status(self):
+        "Returns the person's baby-boomer status."
+        import datetime
+        if datetime.date(1945, 8, 1) <= self.birth_date <= datetime.date(1964, 12, 31):
+            return "Baby boomer"
+        if self.birth_date < datetime.date(1945, 8, 1):
+            return "Pre-boomer"
+        return "Post-boomer"
+
+    def is_midwestern(self):
+        "Returns True if this person is from the Midwest."
+        return self.state in ('IL', 'WI', 'MI', 'IN', 'OH', 'IA', 'MO')
+
+    def _get_full_name(self):
+        "Returns the person's full name."
+        return u'%s %s' % (self.first_name, self.last_name)
+    full_name = property(_get_full_name)
+
+这是用法的实例：
+>>> p = Person.objects.get(first_name='Barack', last_name='Obama')
+>>> p.birth_date
+datetime.date(1961, 8, 4)
+>>> p.baby_boomer_status()
+'Baby boomer'
+>>> p.is_midwestern()
+True
+>>> p.full_name  # Note this isn't a method -- it's treated as an attribute
+u'Barack Obama'
+
+【执行原始SQL查询】
+有时候你会发现Django数据库API带给你的也只有这么多，那你可以为你的数据库写一些自定义SQL查询。
+不要把你的视图代码和django.db.connection语句混杂在一起，把它们放在自定义模型或者自定义manager方法中是个不错的主意。 比如，上面的例子可以被整合成一个自定义manager方法，就像这样：
+from django.db import connection, models
+
+class PersonManager(models.Manager):
+    def first_names(self, last_name):
+        cursor = connection.cursor()
+        cursor.execute("""
+            SELECT DISTINCT first_name
+            FROM people_person
+            WHERE last_name = %s""", [last_name])
+        return [row[0] for row in cursor.fetchone()]
+
+class Person(models.Model):
+    first_name = models.CharField(max_length=50)
+    last_name = models.CharField(max_length=50)
+    objects = PersonManager()
+
+然后这样使用:
+>>> Person.objects.first_names('Lennon')
+['John', 'Cynthia']
+
+
+##通用视图##
+Django内建通用视图可以实现如下功能：
+    完成常用的简单任务： 重定向到另一个页面以及渲染一个指定的模板。
+    显示列表和某个特定对象的详细内容页面。 第8章中提到的 event_list 和 entry_list 视图就是列表视图的一个例子。 一个单一的 event 页面就是我们所说的详细内容页面。
+    呈现基于日期的数据的年/月/日归档页面，关联的详情页面，最新页面。 Django Weblogs (http://www.djangoproject.com/weblog/)的年、月、日的归档就是使用通用视图 架构的，就像是典型的新闻报纸归档。
+
+【使用通用视图】
+使用通用视图的方法是在URLconf文件中创建配置字典，然后把这些字典作为URLconf元组的第三个成员。 （对于这个技巧的应用可以参看第八章向视图传递额外选项。）
+from django.conf.urls.defaults import *
+from django.views.generic.simple import direct_to_template
+
+urlpatterns = patterns('',
+    (r'^about/$', direct_to_template, {
+        'template': 'about.html'
+    })
+)
+
+【对象的通用视图】
+Django通用视图最有用的地方是呈现数据库中的数据。 因为这个应用实在太普遍了，Django带有很多内建的通用视图来帮助你很容易 地生成对象的列表和明细视图。
+
+让我们先看看其中的一个通用视图： 对象列表视图。 我们使用第五章中的 Publisher 来举例：
+
+class Publisher(models.Model):
+    name = models.CharField(max_length=30)
+    address = models.CharField(max_length=50)
+    city = models.CharField(max_length=60)
+    state_province = models.CharField(max_length=30)
+    country = models.CharField(max_length=50)
+    website = models.URLField()
+
+    def __unicode__(self):
+        return self.name
+
+    class Meta:
+        ordering = ['name']
+
+要为所有的出版商创建一个列表页面，我们使用下面的URL配置：
+
+from django.conf.urls.defaults import *
+from django.views.generic import list_detail
+from mysite.books.models import Publisher
+
+publisher_info = {
+    'queryset': Publisher.objects.all(),
+}
+
+urlpatterns = patterns('',
+    (r'^publishers/$', list_detail.object_list, publisher_info)
+)
+
+这就是所要编写的所有Python代码。 当然，我们还需要编写一个模板。 我们可以通过在额外参数字典中包含一个template_name键来显式地告诉object_list视图使用哪个模板：
+
+from django.conf.urls.defaults import *
+from django.views.generic import list_detail
+from mysite.books.models import Publisher
+
+publisher_info = {
+    'queryset': Publisher.objects.all(),
+    **'template_name': 'publisher_list_page.html',**
+}
+
+urlpatterns = patterns('',
+    (r'^publishers/$', list_detail.object_list, publisher_info)
+)
+
+在缺少template_name的情况下，object_list通用视图将自动使用一个对象名称。 在这个例子中，这个推导出的模板名称将是 "books/publisher_list.html" ，其中books部分是定义这个模型的app的名称， publisher部分是这个模型名称的小写。
+
+这个模板将按照 context 中包含的变量 object_list 来渲染，这个变量包含所有的书籍对象。 一个非常简单的模板看起来象下面这样：
+
+{% extends "base.html" %}
+
+{% block content %}
+    <h2>Publishers</h2>
+    <ul>
+        {% for publisher in object_list %}
+            <li>{{ publisher.name }}</li>
+        {% endfor %}
+    </ul>
+{% endblock %}
+
+【扩展通用视图】
+
+##制作友好的模板Context
+你也许已经注意到范例中的出版商列表模板在变量 object_list 里保存所有的书籍。这个方法工作的很好，只是对编写模板的人不太友好。 他们必须知道这里正在处理的是书籍。 更好的变量名应该是publisher_list，这样变量所代表的内容就显而易见了。
+
+我们可以很容易地像下面这样修改 template_object_name 参数的名称：
+
+from django.conf.urls.defaults import *
+from django.views.generic import list_detail
+from mysite.books.models import Publisher
+
+publisher_info = {
+    'queryset': Publisher.objects.all(),
+    'template_name': 'publisher_list_page.html',
+    'template_object_name': 'publisher',
+}
+
+urlpatterns = patterns('',
+    (r'^publishers/$', list_detail.object_list, publisher_info)
+)
+
+在模板中，通用视图会通过在template_object_name后追加一个_list的方式来创建一个表示列表项目的变量名。
+
+##添加额外的Context
+你常常需要呈现比通用视图提供的更多的额外信息。 例如，考虑一下在每个出版商的详细页面显示所有其他出版商列表。 object_detail 通用视图为context提供了出版商信息，但是看起来没有办法在模板中 获取 所有 出版商列表。
+
+这是解决方法： 所有的通用视图都有一个额外的可选参数 extra_context 。这个参数是一个字典数据类型，包含要添加到模板的context中的额外的对象。 所以要给视图提供所有出版商的列表，我们就用这样的info字典：
+
+publisher_info = {
+    'queryset': Publisher.objects.all(),
+    'template_object_name': 'publisher',
+    **'extra_context': {'book_list': Book.objects.all()}**
+}
+
+这样就把一个 {{ book_list }} 变量放到模板的context中。 这个方法可以用来传递任意数据 到通用视图模板中去。
+
+在 extra_context 中用一个回调（callback）来代替使用一个变量。 任何传递给extra_context的可调用对象（例如一个函数）都会在每次视图渲染前执行（而不是只执行一次）。 你可以象这样定义一个函数：
+
+**def get_books():**
+    **return Book.objects.all()**
+
+publisher_info = {
+    'queryset': Publisher.objects.all(),
+    'template_object_name': 'publisher',
+    'extra_context': **{'book_list': get_books}**
+}
+
+或者你可以使用另一个不是那么清晰但是很简短的方法，事实上 Publisher.objects.all 本身就是可以调用的：
+
+publisher_info = {
+    'queryset': Publisher.objects.all(),
+    'template_object_name': 'publisher',
+    'extra_context': **{'book_list': Book.objects.all}**
+}
+
+注意 Book.objects.all 后面没有括号；这表示这是一个函数的引用，并没有真正调用它（通用视图将会在渲染时调用它）。
+
+##显示对象的子集
+在让我们来仔细看看这个 queryset 。 大多数通用视图有一个queryset参数，这个参数告诉视图要显示对象的集合。
+book_info = {
+    'queryset': Book.objects.order_by('-publication_date'),
+}
+
+urlpatterns = patterns('',
+    (r'^publishers/$', list_detail.object_list, publisher_info),
+    **(r'^books/$', list_detail.object_list, book_info),**
+)
+是这并不是一个处理出版商相关书籍的最好方法。 如果我们想要添加另一个 出版商页面，我们就得在URL配置中写URL配置，如果有很多的出版商，这个方法就不能 接受了。 在接下来的章节我们将来解决这个问题。
+
+##用函数包装来处理复杂的数据过滤
+我们可以通过对 object_list 通用视图进行包装来避免 写一大堆的手工代码。
+
+##处理额外工作
+我们再来看看最后一个常用模式：
+
+想象一下我们在 Author 对象里有一个 last_accessed 字段，我们用这个字段来记录最近一次对author的访问。 当然通用视图 object_detail 并不能处理这个问题，但是我们仍然可以很容易地编写一个自定义的视图来更新这个字段。
+
+首先，我们需要在URL配置里设置指向到新的自定义视图：
+
+from mysite.books.views import author_detail
+
+urlpatterns = patterns('',
+    # ...
+    **(r'^authors/(?P<author_id>\d+)/$', author_detail),**
+    # ...
+)
+
+接下来写包装函数：
+
+import datetime
+from django.shortcuts import get_object_or_404
+from django.views.generic import list_detail
+from mysite.books.models import Author
+
+def author_detail(request, author_id):
+    # Delegate to the generic view and get an HttpResponse.
+    response = list_detail.object_detail(
+        request,
+        queryset = Author.objects.all(),
+        object_id = author_id,
+    )
+
+    # Record the last accessed date. We do this *after* the call
+    # to object_detail(), not before it, so that this won't be called
+    # unless the Author actually exists. (If the author doesn't exist,
+    # object_detail() will raise Http404, and we won't reach this point.)
+    now = datetime.datetime.now()
+    Author.objects.filter(id=author_id).update(last_accessed=now)
+
+    return response
+
+注意
+
+除非你添加 last_accessed 字段到你的 Author 模型并创建 books/author_detail.html 模板，否则这段代码不能真正工作。
+3
+
+我们可以用同样的方法修改通用视图的返回值。 如果我们想要提供一个供下载用的 纯文本版本的author列表，我们可以用下面这个视图：
+
+def author_list_plaintext(request):
+    response = list_detail.object_list(
+        request,
+        queryset = Author.objects.all(),
+        mimetype = 'text/plain',
+        template_name = 'books/author_list.txt'
+    )
+    response["Content-Disposition"] = "attachment; filename=authors.txt"
+    return response
+
+这个方法之所以工作是因为通用视图返回的 HttpResponse 对象可以象一个字典 一样的设置HTTP的头部。 随便说一下，这个 Content-Disposition 的含义是 告诉浏览器下载并保存这个页面，而不是在浏览器中显示它。
+
+
+##部署Django##
+
+DEBUG=False
+
+##实现一个500模板
+
+类似的，如果`` DEBUG`` 设置为`` False`` ，Djang不再会显示它自带的应对未处理的Python异常的错误反馈页面。 作为代替，它会查找一个名为`` 500.html`` 的模板并且显示它。 像`` 404.html`` 一样，这个模板应该被放置在你的模板根目录下。
+
+这里有一个关于500.html的比较棘手的问题。你永远不能确定`` 为什么``会显示这个模板，所以它不应该做任何需要连接数据库，或者依赖任何可能被破坏的基础构件的事情。 （例如：它不应该使用自定义模板标签。）如果它用到了模板继承，那么父模板也就不应该依赖可能被破坏的基础构件。 因此，最好的方法就是避免模板继承，并且用一些非常简单的东西。 这是一个`` 500.html`` 的例子，可以把它作为一个起点：
+1
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN"
+    "http://www.w3.org/TR/html4/strict.dtd">
+<html lang="en">
+<head>
+    <title>Page unavailable</title>
+</head>
+<body>
+    <h1>Page unavailable</h1>
+
+    <p>Sorry, but the requested page is unavailable due to a
+    server hiccup.</p>
+
+    <p>Our engineers have been notified, so check back later.</p>
+</body>
+</html>
+
+##设置错误警告
+先，改变你的ADMINS设置用来引入你的E-mail地址，以及那些任何需要被注意的联系人的E-mail地址。 这个设置采用了类似于(姓名, Email)元组，像这样：
+
+ADMINS = (
+    ('John Lennon', 'jlennon@example.com'),
+    ('Paul McCartney', 'pmacca@example.com'),
+)
+
+
+##设置连接中断警报
+如果你安装有CommonMiddleware(比如，你的MIDDLEWARE_CLASSES设置包含了’django.middleware.common.CommonMiddleware’的情况下，默认就安装了CommonMiddleware),你就具有了设置这个选项的能力：有人在访问你的Django网站的一个非空的链接而导致一个404错误的发生和连接中断的情况，你将收到一封邮件. 如果你想激活这个特性，设置SEND_BROKEN_LINK_EMAILS 为True(默认为False),并设置你的MANAGERS为某个人或某些人的邮件地址，这些邮件地址将会收到报告连接中断错误的邮件. MANAGERS使用和ADMINS 同样的语法.例如:
+
+MANAGERS = (
+    ('George Harrison', 'gharrison@example.com'),
+    ('Ringo Starr', 'ringo@example.com'),
+)
+
+【使用针对产品的不同的设置】
+设定多个settings.py，方便使用。
+通过下面三种方法的其中一种达到这个目的。
+    设置成两个全面的，彼此独立的配置文件
+    设置一个基本的配置文件（比如，为了开发)和第二个（为了产品)配置文件，第二个配置文件仅仅从基本的那个配置文件导入配置，并对需要定义的进行复写.
+    使用一个单独的配置文件，此配置文件包含一个Python的逻辑判断根据上下文环境改变设置。
+
+【DJANGO_SETTINGS_MODULE】
+DJANGO_SETTINGS_MODULE指向你的配置文件。
+
+【用Apache和mod_python来部署Django】
+mod_python (http://www.djangoproject.com/r/mod_python/)是一个在Apache中嵌入Python的Apache插件，它在服务器启动时将Python代码加载到内存中。
+
+##基本配置
+首先要安装有可用的 mod_python 模块的 Apache。这通常意味着应该有一个 LoadModule 指令在 Apache 配置文件中。 它看起来就像是这样：
+LoadModule python_module /usr/lib/apache2/modules/mod_python.so
+
+ Then, edit your Apache configuration file and add a <Location> directive that ties a specific URL path to a specific Django installation. 例如：
+
+<Location "/">
+    SetHandler python-program
+    PythonHandler django.core.handlers.modpython
+    SetEnv DJANGO_SETTINGS_MODULE mysite.settings
+    PythonDebug Off
+</Location>
+
+要确保把 DJANGO_SETTINGS_MODULE 中的 mysite.settings 项目换成与你的站点相应的内容。
+
+。。。（文档未显示内容,一些命令设置）
+
+Apache 可能不但会运行在你正常登录的环境中，也会运行在其它不同的用户环境中；也可能会有不同的文件路径或 sys.path。 你需要告诉 mod_python 如何去寻找你的项目及 Django 的位置。
+PythonPath "['/path/to/project', '/path/to/django'] + sys.path"
+
+你应该在成品服务器上设置 PythonDebug Off 。如果你使用 PythonDebug On 的话，在程序产生错误时，你的用户会看到难看的（并且是暴露的） Python 回溯信息。
+
+【在同一个 Apache 的实例中运行多个 Django 程序】
+只要像下面这样使用 VirtualHost 你可以实现：
+
+NameVirtualHost *
+
+<VirtualHost *>
+    ServerName www.example.com
+    # ...
+    SetEnv DJANGO_SETTINGS_MODULE mysite.settings
+</VirtualHost>
+
+<VirtualHost *>
+    ServerName www2.example.com
+    # ...
+    SetEnv DJANGO_SETTINGS_MODULE mysite.other_settings
+</VirtualHost>
+
+如果你需要在同一个 VirtualHost 中运行两个 Django 程序，你需要特别留意一下以 确保 mod_python 的代码缓存不被弄得乱七八糟。 使用 PythonInterpreter 指令来将不 同的 <Location> 指令分别解释：
+
+<VirtualHost *>
+    ServerName www.example.com
+    # ...
+    <Location "/something">
+        SetEnv DJANGO_SETTINGS_MODULE mysite.settings
+        PythonInterpreter mysite
+    </Location>
+
+    <Location "/otherthing">
+        SetEnv DJANGO_SETTINGS_MODULE mysite.other_settings
+        PythonInterpreter mysite_other
+    </Location>
+</VirtualHost>
+
+【用 mod_python 运行一个开发服务器】
+因为 mod_python 缓存预载入了 Python 的代码，当在 mod_python 上发布 Django 站点时，你每 改动了一次代码都要需要重启 Apache 一次。 这还真是件麻烦事，所以这有个办法来避免它： 只要 加入 MaxRequestsPerChild 1 到配置文件中强制 Apache 在每个请求时都重新载入所有的 代码。 但是不要在产品服务器上使用这个指令，这会撤销 Django 的特权。
+
+如果你是一个用分散的 print 语句（我们就是这样）来调试的程序员，注意这 print 语 句在 mod_python 中是无效的；它不会像你希望的那样产生一个 Apache 日志。 如果你需要在 mod_python 中打印调试信息，可能需要用到 Python 标准日志包（Pythons standard logging package）。 更多的信息请参见
+
+【使用FastCGI部署Django应用】
+FastCGI也是驻留在内存里为客户请求返回动态信息,而且也免掉了像传统的CGI一样启动进程时候的时间花销。 但于mod_python不同之处是它并不是作为模块运行在web服务器同一进程内的，而是有自己的独立进程。
+
+【运行你的 FastCGI 服务器】
+web服务器有两种方式于FastCGI进程交互： 使用Unix domain socket(在win32里面是 命名管道 )或者使用TCP socket.具体使用哪一个，那就根据你的偏好而定了，但是TCP socket弄不好的话往往会发生一些权限上的问题。
+
+开始你的服务器项目，首先进入你的项目目录下（你的 manage.py 文件所在之处），然后使用 manage.py runfcgi 命令：
+
+./manage.py runfcgi [options]
+
+想了解如何使用 runfcgi ，输入 manage.py runfcgi help 命令。
+
+你可以指定 socket 或者同时指定 host 和 port 。当你要创建Web服务器时，你只需要将服务器指向当你在启动FastCGI服务器时确定的socket或者host/port。
+
+范例：
+
+    在TCP端口上运行一个线程服务器：
+./manage.py runfcgi method=threaded host=127.0.0.1 port=3033
+
+    在Unix socket上运行prefork服务器：
+./manage.py runfcgi method=prefork socket=/home/user/mysite.sock pidfile=django.pid
+
+    启动，但不作为后台进程（在调试时比较方便）：
+./manage.py runfcgi daemonize=false socket=/tmp/mysite.sock
+
+【停止FastCGI的行程】
+kill
+
+【在Apache中以FastCGI的方式使用Django】
+在Apache和FastCGI上使用Django，你需要安装和配置Apache，并且安装mod_fastcgi。
+当完成了安装，通过 httpd.conf （Apache的配置文件）来让Apache和Django FastCGI互相通信。 你需要做两件事：
+    使用 FastCGIExternalServer 指明FastCGI的位置。
+    使用 mod_rewrite 为FastCGI指定合适的URL。
+
+##指定 FastCGI Server 的位置
+FastCGIExternalServer 告诉Apache如何找到FastCGI服务器。
+以下是两个例子：
+# Connect to FastCGI via a socket/named pipe:
+FastCGIExternalServer /home/user/public_html/mysite.fcgi -socket /home/user/mysite.sock
+# Connect to FastCGI via a TCP host/port:
+FastCGIExternalServer /home/user/public_html/mysite.fcgi -host 127.0.0.1:3033
+在这两个例子中， /home/user/public_html/ 目录必须存在，而 /home/user/public_html/mysite.fcgi 文件不一定存在。 它仅仅是一个Web服务器内部使用的接口，这个URL决定了对于哪些URL的请求会被FastCGI处理
+
+##使用mod_rewrite为FastCGI指定URL
+第二步是告诉Apache为符合一定模式的URL使用FastCGI。 为了实现这一点，请使用mod_rewrite 模块，并将这些URL重定向到 mysite.fcgi （或者正如在前文中描述的那样，使用任何在 FastCGIExternalServer 指定的内容）。
+
+在这个例子里面，我们告诉Apache使用FastCGI来处理那些在文件系统上不提供文件(译者注：
+
+<VirtualHost 12.34.56.78>
+  ServerName example.com
+  DocumentRoot /home/user/public_html
+  Alias /media /home/user/python/django/contrib/admin/media
+  RewriteEngine On
+  RewriteRule ^/(media.*)$ /$1 [QSA,L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^/(.*)$ /mysite.fcgi/$1 [QSA,L]
+</VirtualHost>
+
+【FastCGI 和 lighttpd】
+lighttpd (http://www.djangoproject.com/r/lighttpd/) 是一个轻量级的Web服务器，通常被用来提供静态页面的访问。 它天生支持FastCGI，因此除非你的站点需要一些Apache特有的特性，否则，lighttpd对于静态和动态页面来说都是理想的选择。
+
+确保 mod_fastcgi 在模块列表中，它需要出现在 mod_rewrite 和 mod_access ，但是要在 mod_accesslog 之前。
+
+将下面的内容添加到你的lighttpd的配置文件中：
+
+server.document-root = "/home/user/public_html"
+fastcgi.server = (
+    "/mysite.fcgi" => (
+        "main" => (
+            # Use host / port instead of socket for TCP fastcgi
+            # "host" => "127.0.0.1",
+            # "port" => 3033,
+            "socket" => "/home/user/mysite.sock",
+            "check-local" => "disable",
+        )
+    ),
+)
+alias.url = (
+    "/media/" => "/home/user/django/contrib/admin/media/",
+)
+
+url.rewrite-once = (
+    "^(/media.*)$" => "$1",
+    "^/favicon\.ico$" => "/media/favicon.ico",
+    "^(/.*)$" => "/mysite.fcgi$1",
+)
+
+##在一个lighttpd进程中运行多个Django站点
+lighttpd允许你使用条件配置来为每个站点分别提供设置。 为了支持FastCGI的多站点，只需要在FastCGI的配置文件中，为每个站点分别建立条件配置项：
+1
+
+# If the hostname is 'www.example1.com'...
+$HTTP["host"] == "www.example1.com" {
+    server.document-root = "/foo/site1"
+    fastcgi.server = (
+       ...
+    )
+    ...
+}
+
+# If the hostname is 'www.example2.com'...
+$HTTP["host"] == "www.example2.com" {
+    server.document-root = "/foo/site2"
+    fastcgi.server = (
+       ...
+    )
+    ...
+}
+
+你也可以通过 fastcgi.server 中指定多个入口，在同一个站点上实现多个Django安装。 请为每一个安装指定一个FastCGI主机。
+
