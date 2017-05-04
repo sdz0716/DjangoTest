@@ -1605,3 +1605,819 @@ $HTTP["host"] == "www.example2.com" {
 
 你也可以通过 fastcgi.server 中指定多个入口，在同一个站点上实现多个Django安装。 请为每一个安装指定一个FastCGI主机。
 
+【可扩展性】
+
+##web与database分离
+ 只需要简单地修改 DATABASE_HOST ，设置为新的数据库服务器的IP地址或者DNS域名。 设置为IP地址总是一个好主意，因为使用DNS域名，还要牵涉到DNS服务器的可靠性连接问题。
+
+##运行一个独立的媒体服务器
+我们要把媒体资源（任何 不是 由Django视图产生的东西）分离到别的服务器上。
+理想的情况是，这个媒体服务器是一个定制的Web服务器，为传送静态媒体资源做了优化。 lighttpd和tux (http://www.djangoproject.com/r/tux/) 都是极佳的选择，当然瘦身的Apache服务器也可以工作的很好。
+Django的admin管理接口需要能够获得足够的权限来处理上传的媒体（通过设置 MEDIA_ROOT ）。如果媒体资源在另外的一台服务器上，你需要获得通过网络写操作的权限。 如果你的应用牵涉到文件上载，Django需要能够面向媒体服务器撰写上载媒体 如果媒体是在另外一台服务器上的，你需要部署一种方法使得Django可以通过网络去写这些媒体。
+
+##实现负担均衡和数据冗余备份
+
+##集群
+
+    当你需要更好的数据库性能，你可能需要增加数据库的冗余服务器。 MySQL内置了备份功能；PostgreSQL应该看一下Slony (http://www.djangoproject.com/r/slony/) 和 pgpool (http://www.djangoproject.com/r/pgpool/) ，这两个分别是数据库备份和连接池的工具。
+    如果单个均衡器不能达到要求，你可以增加更多的均衡器，并且使用轮训（round-robin）DNS来实现分布访问。
+    如果单台媒体服务器不够用，你可以增加更多的媒体服务器，并通过集群来分布流量。
+    如果你需要更多的高速缓存（cache），你可以增加cache服务器。
+    在任何情况下，只要集群工作性能不好，你都可以往上增加服务器。
+
+##性能优化
+RAM怎么也不嫌多
+禁用 Keep-Alive
+使用 memcached
+
+
+##输出非HTML内容##
+Web远不只有HTML，我们在Web上用多种格式来发布数据： RSS、PDF、图片等。
+
+【视图和MIME类型】
+一个Django视图函数 必须
+
+    接受一个 HttpRequest 实例作为它的第一个参数
+
+    返回一个 HttpResponse 实例
+
+从一个视图返回一个非 HTML 内容的关键是在构造一个 HttpResponse 类时，需要指定 mimetype 参数。 通过改变 MIME 类型，我们可以通知浏览器将要返回的数据是另一种类型。
+下面我们以返回一张PNG图片的视图为例。 为了使事情能尽可能的简单，我们只是读入一张存储在磁盘上的图片：
+from django.http import HttpResponse
+
+def my_image(request):
+    image_data = open("/path/to/my/image.png", "rb").read()
+    return HttpResponse(image_data, mimetype="image/png")
+
+【生成 CSV 文件】
+import csv
+from django.http import HttpResponse
+
+# Number of unruly passengers each year 1995 - 2005. In a real application
+# this would likely come from a database or some other back-end data store.
+UNRULY_PASSENGERS = [146,184,235,200,226,251,299,273,281,304,203]
+
+def unruly_passengers_csv(request):
+    # Create the HttpResponse object with the appropriate CSV header.
+    response = HttpResponse(mimetype='text/csv')
+    response['Content-Disposition'] = 'attachment; filename=unruly.csv'
+
+    # Create the CSV writer using the HttpResponse as the "file."
+    writer = csv.writer(response)
+    writer.writerow(['Year', 'Unruly Airline Passengers'])
+    for (year, num) in zip(range(1995, 2006), UNRULY_PASSENGERS):
+        writer.writerow([year, num])
+
+    return response
+响应返回的是 text/csv MIME类型（而非默认的 text/html ）
+
+【生成 PDF 文件】
+需要安装 ReportLab 库。
+和 CSV 类似，由 Django 动态生成 PDF 文件很简单，因为 ReportLab API 同样可以使用类似文件对象。
+
+下面是一个 Hello World 的示例：
+
+from reportlab.pdfgen import canvas
+from django.http import HttpResponse
+
+def hello_pdf(request):
+    # Create the HttpResponse object with the appropriate PDF headers.
+    response = HttpResponse(mimetype='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename=hello.pdf'
+
+    # Create the PDF object, using the response object as its "file."
+    p = canvas.Canvas(response)
+
+    # Draw things on the PDF. Here's where the PDF generation happens.
+    # See the ReportLab documentation for the full list of functionality.
+    p.drawString(100, 100, "Hello world.")
+
+    # Close the PDF object cleanly, and we're done.
+    p.showPage()
+    p.save()
+    return response
+
+这里我们使用的 MIME 类型是 application/pdf 。
+
+【其他的可能性】
+ZIP 文件 ：Python 标准库中包含有 zipfile 模块，它可以读和写压缩的 ZIP 文件。 它可以用于按需生成一些文件的压缩包，或者在需要时压缩大的文档。 如果是 TAR 文件则可以使用标准库 tarfile 模块。
+
+动态图片 ： Python 图片处理库 (PIL; http://www.pythonware.com/products/pil/) 是极好的生成图片(PNG, JPEG, GIF 以及其它许多格式)的工具。 它可以用于自动为图片生成缩略图，将多张图片压缩到单独的框架中，或者是做基于 Web 的图片处理。
+
+图表 ： Python 有许多出色并且强大的图表库用以绘制图表，按需地图，表格等。 我们不可能将它们全部列出，所以下面列出的是个中的翘楚。
+    matplotlib (http://matplotlib.sourceforge.net/) 可以用于生成通常是由 matlab 或者 Mathematica 生成的高质量图表。
+    pygraphviz (https://networkx.lanl.gov/wiki/pygraphviz) 是一个 Graphviz 图形布局的工具 (http://graphviz.org/) 的 Python 接口，可以用于生成结构化的图表和网络。
+
+【内容聚合器应用框架】
+RSS和Atom都是基于XML的格式，你可以用它来提供有关你站点内容的自动更新的feed。
+RSS是一种基于Web的网络数据交换规范，全称是Really Simple Syndication（RSS 2.0）（上面是wikipedia的解释），简单的说就是新闻聚合的意思，大家可以通过这种规范进行内容的交换，通俗意义上来说，你得到了对方的 RSSfeed，通过相应的RSS聚合器，你就可以按照标题形式获得对方网站上最新的消息。
+RSSfeed是一种基于XML技术的聚合标准，直观地说就是你要获取消息的网站或者 blog的内容的种子，你获得了这个网站的RSSfeed，然后添加到你的RSS聚合器中，你的RSS聚合器就会定时按照RSSfeed去解析对方网站上 的内容，并按照上图的表现方式呈现到你面前，使你简单的就可以获取到自己感兴趣的网站或者blog的最新内容
+
+实现：...???
+
+【Sitemap 框架】
+sitemap 是你服务器上的一个XML文件，它告诉搜索引擎你的页面的更新频率和某些页面相对于其它页面的重要性。 这个信息会帮助搜索引擎索引你的网站。
+
+实现：...???
+
+
+##会话、用户和注册##
+
+【Cookies】
+cookies 是浏览器为 Web 服务器存储的一小段信息。 每次浏览器从某个服务器请求页面时，它向服务器回送之前收到的cookies。
+工作方式：
+当你打开浏览器并访问 google.com ，你的浏览器会给Google发送一个HTTP请求，起始部分就象这样：
+
+GET / HTTP/1.1
+Host: google.com
+...
+
+当 Google响应时，HTTP的响应是这样的：
+
+HTTP/1.1 200 OK
+Content-Type: text/html
+Set-Cookie: PREF=ID=5b14f22bdaf1e81c:TM=1167000671:LM=1167000671;
+            expires=Sun, 17-Jan-2038 19:14:07 GMT;
+            path=/; domain=.google.com
+Server: GWS/2.1
+...
+
+注意 Set-Cookie 的头部。 你的浏览器会存储cookie值( PREF=ID=5b14f22bdaf1e81c:TM=1167000671:LM=1167000671 ) ，而且每次访问google 站点都会回送这个cookie值。 因此当你下次访问Google时，你的浏览器会发送像这样的请求：
+GET / HTTP/1.1
+Host: google.com
+Cookie: PREF=ID=5b14f22bdaf1e81c:TM=1167000671:LM=1167000671
+...
+
+于是 Cookies 的值会告诉Google，你就是早些时候访问过Google网站的人。 这个值可能是数据库中存储用户信息的key，可以用它在页面上显示你的用户名。 Google会（以及目前）使用它在网页上显示你账号的用户名。
+
+【存取Cookies】
+读取已经设置好的cookies极其简单。 每一个`` HttpRequest`` 对象都有一个`` COOKIES`` 对象，该对象的行为类似一个字典，你可以使用它读取任何浏览器发送给视图（view）的cookies。
+
+def show_color(request):
+    if "favorite_color" in request.COOKIES:
+        return HttpResponse("Your favorite color is %s" %             request.COOKIES["favorite_color"])
+    else:
+        return HttpResponse("You don't have a favorite color.")
+
+
+写cookies稍微复杂点。 你需要使用 HttpResponse对象的 set_cookie()方法。 这儿有个基于 GET 参数来设置 favorite_color
+
+    cookie的例子：
+
+def set_color(request):
+    if "favorite_color" in request.GET:
+
+        # Create an HttpResponse object...
+        response = HttpResponse("Your favorite color is now %s" %             request.GET["favorite_color"])
+
+        # ... and set a cookie on the response
+        response.set_cookie("favorite_color",
+                            request.GET["favorite_color"])
+
+        return response
+
+    else:
+        return HttpResponse("You didn't give a favorite color.")
+
+你可以给 response.set_cookie() 传递一些可选的参数来控制cookie的行为。
+
+【好坏参半的Cookies】
+cookie的存储是自愿的，一个客户端不一定要去接受或存储cookie。
+Cookie(特别是那些没通过HTTPS传输的)是非常不安全的。 因为HTTP数据是以明文发送的。
+
+【Django的 Session 框架】
+你可以用session 框架来存取每个访问者任意数据， 这些数据在服务器端存储，并对cookie的收发进行了抽象。 Cookies只存储数据的哈希会话ID，而不是数据本身，从而避免了大部分的常见cookie问题。
+
+Sessions 功能是通过一个中间件(参见第17章)和一个模型(model)来实现的。 要打开sessions功能，需要以下几步操作：
+    编辑 MIDDLEWARE_CLASSES 配置，确保 MIDDLEWARE_CLASSES 中包含 'django.contrib.sessions.middleware.SessionMiddleware'。
+    确认 INSTALLED_APPS 中有 'django.contrib.sessions' (如果你是刚打开这个应用，别忘了运行 manage.py syncdb )
+
+【在视图中使用Session】
+SessionMiddleware 激活后，每个传给视图(view)函数的第一个参数``HttpRequest`` 对象都有一个 session 属性，这是一个字典型的对象。 你可以象用普通字典一样来用它。 例如，在视图(view)中你可以这样用：
+
+# Set a session value:
+request.session["fav_color"] = "blue"
+
+# Get a session value -- this could be called in a different view,
+# or many requests later (or both):
+fav_color = request.session["fav_color"]
+
+# Clear an item from the session:
+del request.session["fav_color"]
+
+# Check if the session has a given key:
+if "fav_color" in request.session:
+
+【设置测试Cookies】
+就像前面提到的，你不能指望所有的浏览器都可以接受cookie。 因此，为了使用方便，Django提供了一个简单的方法来测试用户的浏览器是否接受cookie。 你只需在视图(view)中调用 request.session.set_test_cookie()，并在后续的视图(view)、而不是当前的视图(view)中检查 request.session.test_cookie_worked() 。
+检查cookie是否可以正常工作后，你得自己用 delete_test_cookie() 来清除它，这是个好习惯。 在你证实了测试cookie已工作了之后这样操作。
+这是个典型例子：
+
+def login(request):
+
+    # If we submitted the form...
+    if request.method == 'POST':
+
+        # Check that the test cookie worked (we set it below):
+        if request.session.test_cookie_worked():
+
+            # The test cookie worked, so delete it.
+            request.session.delete_test_cookie()
+
+            # In practice, we'd need some logic to check username/password
+            # here, but since this is an example...
+            return HttpResponse("You're logged in.")
+
+        # The test cookie failed, so display an error message. If this
+        # were a real site, we'd want to display a friendlier message.
+        else:
+            return HttpResponse("Please enable cookies and try again.")
+
+    # If we didn't post, send the test cookie along with the login form.
+    request.session.set_test_cookie()
+    return render_to_response('foo/login_form.html')
+
+【在视图(View)外使用Session】
+你需要使用get_decoded() 来读取实际的session数据。 这是必需的，因为字典存储为一种特定的编码格式。
+
+>>> s.session_data
+'KGRwMQpTJ19hdXRoX3VzZXJfaWQnCnAyCkkxCnMuMTExY2ZjODI2Yj...'
+>>> s.get_decoded()
+{'user_id': 42}
+
+【何时保存Session】
+缺省的情况下，Django只会在session发生变化的时候才会存入数据库，比如说，字典赋值或删除。
+你可以设置 SESSION_SAVE_EVERY_REQUEST 为 True 来改变这一缺省行为。如果置为True的话，Django会在每次收到请求的时候保存session，即使没发生变化。
+
+【浏览器关闭即失效会话 vs 持久会话】
+Google给我们发送的cookie中有 expires=Sun, 17-Jan-2038 19:14:07 GMT; cookie可以有过期时间，这样浏览器就知道什么时候可以删除cookie了。 如果cookie没有设置过期时间，当用户关闭浏览器的时候，cookie就自动过期了。 你可以改变 SESSION_EXPIRE_AT_BROWSER_CLOSE 的设置来控制session框架的这一行为。
+
+缺省情况下， SESSION_EXPIRE_AT_BROWSER_CLOSE 设置为 False ，这样，会话cookie可以在用户浏览器中保持有效达 SESSION_COOKIE_AGE 秒（缺省设置是两周，即1,209,600 秒）。 如果你不想用户每次打开浏览器都必须重新登陆的话，用这个参数来帮你。
+
+如果 SESSION_EXPIRE_AT_BROWSER_CLOSE 设置为 True ，当浏览器关闭时，Django会使cookie失效。
+
+【技术细节】
+session 字典接受任何支持序列化的Python对象。 参考Python内建模块pickle的文档以获取更多信息。
+
+Session 数据存在数据库表 django_session 中
+
+Session 数据在需要的时候才会读取。 如果你从不使用 request.session ， Django不会动相关数据库表的一根毛。
+
+Django 只在需要的时候才送出cookie。 如果你压根儿就没有设置任何会话数据，它不会 送出会话cookie(除非 SESSION_SAVE_EVERY_REQUEST 设置为 True )。
+
+Django session 框架完全而且只能基于cookie。 它不会后退到把会话ID编码在URL中（像某些工具(PHP,JSP)那样）。
+
+【用户与Authentication】
+通过session，我们可以在多次浏览器请求中保持数据， 接下来的部分就是用session来处理用户登录了。
+Django 认证/授权 系统会包含以下的部分：
+    用户 : 在网站注册的人
+    权限 : 用于标识用户是否可以执行某种操作的二进制(yes/no)标志
+    组 :一种可以将标记和权限应用于多个用户的常用方法
+    Messages : 向用户显示队列式的系统消息的常用方法
+
+安装后，我们就可以在视图(view)的函数中处理user了。 在视图中存取users，主要用 request.user ；这个对象表示当前已登录的用户。 如果用户还没登录，这就是一个AnonymousUser对象(细节见下)。
+
+你可以很容易地通过 is_authenticated() 方法来判断一个用户是否已经登录了：
+
+if request.user.is_authenticated():
+    # Do something for authenticated users.
+else:
+    # Do something for anonymous users.
+
+【使用User对象】
+User 实例一般从 request.user ，或是其他下面即将要讨论到的方法取得，它有很多属性和方法。
+username 	必需的，不能多于30个字符。 仅用字母数字式字符（字母、数字和下划线）。
+first_name 	可选; 少于等于30字符。
+last_name 	可选; 少于等于30字符。
+email 	可选。 邮件地址。
+password 	必需的。 密码的哈希值（Django不储存原始密码）。 See the Passwords section for more about this value.
+is_staff 	布尔值。 用户是否拥有网站的管理权限。
+is_active 	布尔值. 设置该账户是否可以登录。 把该标志位置为False而不是直接删除账户。
+is_superuser 	布尔值 标识用户是否拥有所有权限，无需显式地权限分配定义。
+last_login 	用户上次登录的时间日期。 它被默认设置为当前的日期/时间。
+date_joined 	账号被创建的日期时间 当账号被创建时，它被默认设置为当前的日期/时间。
+
+。。。
+
+【登录和退出】
+Django 提供内置的视图(view)函数用于处理登录和退出。
+在实际中，你一般不需要自己写登录/登出的函数；认证系统提供了一系例视图用来处理登录和登出。 使用认证视图的第一步是把它们写在你的URLconf中。 你需要这样写：
+2
+
+from django.contrib.auth.views import login, logout
+
+urlpatterns = patterns('',
+    # existing patterns here...
+    (r'^accounts/login/$',  login),
+    (r'^accounts/logout/$', logout),
+)
+
+/accounts/login/ 和 /accounts/logout/ 是Django提供的视图的默认URL。
+35
+
+缺省情况下， login 视图渲染 registragiton/login.html 模板(可以通过视图的额外参数 template_name 修改这个模板名称)。 这个表单必须包含 username 和 password 域。如下示例： 一个简单的 template 看起来是这样的
+
+{% extends "base.html" %}
+
+{% block content %}
+
+  {% if form.errors %}
+    <p class="error">Sorry, that's not a valid username or password</p>
+  {% endif %}
+
+  <form action="" method="post">
+    <label for="username">User name:</label>
+    <input type="text" name="username" value="" id="username">
+    <label for="password">Password:</label>
+    <input type="password" name="password" value="" id="password">
+
+    <input type="submit" value="login" />
+    <input type="hidden" name="next" value="{{ next|escape }}" />
+  </form>
+
+{% endblock %}
+
+logout视图有一些不同。 默认情况下它渲染 registration/logged_out.html 模板（这个视图一般包含你已经成功退出的信息）。 视图中还可以包含一个参数 next_page 用于退出后重定向。
+
+【限制已登录用户的访问】
+有很多原因需要控制用户访问站点的某部分。
+
+一个简单原始的限制方法是检查 request.user.is_authenticated() ,然后重定向到登陆页面：
+
+from django.http import HttpResponseRedirect
+
+def my_view(request):
+    if not request.user.is_authenticated():
+        return HttpResponseRedirect('/accounts/login/?next=%s' % request.path)
+    # ...
+
+或者显示一个出错信息：
+
+def my_view(request):
+    if not request.user.is_authenticated():
+        return render_to_response('myapp/login_error.html')
+    # ...
+
+作为一个快捷方式, 你可以使用便捷的 login_required 修饰符:
+
+from django.contrib.auth.decorators import login_required
+
+@login_required
+def my_view(request):
+    # ...
+
+login_required 做下面的事情:
+    如果用户没有登录, 重定向到 /accounts/login/ , 把当前绝对URL作为 next 在查询字符串中传递过去, 例如： /accounts/login/?next=/polls/3/ 。
+    如果用户已经登录, 正常地执行视图函数。 视图代码就可以假定用户已经登录了。
+
+【对通过测试的用户限制访问】
+限制访问可以基于某种权限，某些检查或者为login视图提供不同的位置，这些实现方式大致相同。
+一般的方法是直接在视图的 request.user 上运行检查。 例如，下面视图确认用户登录并是否有 polls.can_vote权限：
+
+def vote(request):
+    if request.user.is_authenticated() and request.user.has_perm('polls.can_vote')):
+        # vote here
+    else:
+        return HttpResponse("You can't vote in this poll.")
+
+既然检查用户是否有一个特殊权限是相对常见的任务，Django为这种情形提供了一个捷径： permission_required() 装饰器。 使用这个装饰器，前面的例子可以改写为：
+
+from django.contrib.auth.decorators import permission_required
+
+@permission_required('polls.can_vote', login_url="/login/")
+def vote(request):
+    # ...
+
+注意, permission_required() 也有一个可选的 login_url 参数, 这个参数默认为 '/accounts/login/' 。
+
+【管理 Users, Permissions 和 Groups】
+##创建用户
+使用 create_user 辅助函数创建用户:
+
+>>> from django.contrib.auth.models import User
+>>> user = User.objects.create_user(username='john',
+...                                 email='jlennon@beatles.com',
+...                                 password='glass onion')
+
+在这里， user 是 User 类的一个实例，准备用于向数据库中存储数据。（create_user()实际上没有调用save()）。 create_user() 函数并没有在数据库中创建记录，在保存数据之前，你仍然可以继续修改它的属性值。
+
+>>> user.is_staff = True
+>>> user.save()
+
+##修改密码
+你可以使用 set_password() 来修改密码：
+
+>>> user = User.objects.get(username='john')
+>>> user.set_password('goo goo goo joob')
+>>> user.save()
+
+【处理注册】
+我们可以使用这些底层工具来创建允许用户注册的视图。
+作为这个事情的最简化处理, 我们可以提供一个小视图, 提示一些必须的用户信息并创建这些用户。 Django为此提供了可用的内置表单, 下面这个例子就使用了这个表单:
+
+from django import forms
+from django.contrib.auth.forms import UserCreationForm
+from django.http import HttpResponseRedirect
+from django.shortcuts import render_to_response
+
+def register(request):
+    if request.method == 'POST':
+        form = UserCreationForm(request.POST)
+        if form.is_valid():
+            new_user = form.save()
+            return HttpResponseRedirect("/books/")
+    else:
+        form = UserCreationForm()
+    return render_to_response("registration/register.html", {
+        'form': form,
+    })
+
+这个表单需要一个叫 registration/register.html 的模板。这个模板可能是这样的：
+
+{% extends "base.html" %}
+
+{% block title %}Create an account{% endblock %}
+
+{% block content %}
+  <h1>Create an account</h1>
+
+  <form action="" method="post">
+      {{ form.as_p }}
+      <input type="submit" value="Create the account">
+  </form>
+{% endblock %}
+
+【在模板中使用认证数据】
+当前登入的用户以及他（她）的权限可以通过 RequestContext 在模板的context中使用。
+当使用 RequestContext 时, 当前用户 (是一个 User 实例或一个 AnonymousUser 实例) 存储在模板变量 {{ user }} 中:
+
+{% if user.is_authenticated %}
+  <p>Welcome, {{ user.username }}. Thanks for logging in.</p>
+{% else %}
+  <p>Welcome, new user. Please log in.</p>
+{% endif %}
+
+这些用户的权限信息存储在 {{ perms }} 模板变量中。
+
+你有两种方式来使用 perms 对象。 你可以使用类似于 {{ perms.polls }} 的形式来检查，对于某个特定的应用，一个用户是否具有 任意 权限；你也可以使用 {{ perms.polls.can_vote }} 这样的形式，来检查一个用户是否拥有特定的权限。
+
+这样你就可以在模板中的 {% if %} 语句中检查权限:
+
+{% if perms.polls %}
+  <p>You have permission to do something in the polls app.</p>
+  {% if perms.polls.can_vote %}
+    <p>You can vote!</p>
+  {% endif %}
+{% else %}
+  <p>You don't have permission to do anything in the polls app.</p>
+{% endif %}
+
+【权限、组和消息】
+Django的admin站点如下使用权限：
+
+    只有设置了 add 权限的用户才能使用添加表单，添加对象的视图。
+    只有设置了 change 权限的用户才能使用变更列表，变更表格，变更对象的视图。
+    只有设置了 delete 权限的用户才能删除一个对象。
+
+【消息】
+消息系统会为给定的用户接收消息。 每个消息都和一个 User 相关联。
+在每个成功的操作以后，Django的admin管理接口就会使用消息机制。 例如，当你创建了一个对象，你会在admin页面的顶上看到 The object was created successfully 的消息。
+你也可以使用相同的API在你自己的应用中排队接收和显示消息。 API非常地简单：
+
+    要创建一条新的消息，使用 user.message_set.create(message='message_text') 。
+
+    要获得/删除消息，使用 user.get_and_delete_messages() ，这会返回一个 Message 对象的列表，并且从队列中删除返回的项。
+
+在例子视图中，系统在创建了播放单（playlist）以后，为用户保存了一条消息。
+
+def create_playlist(request, songs):
+    # Create the playlist with the given songs.
+    # ...
+    request.user.message_set.create(
+        message="Your playlist was added successfully."
+    )
+    return render_to_response("playlists/create.html",
+        context_instance=RequestContext(request))
+
+当使用 RequestContext ，当前登录的用户以及他（她）的消息，就会以模板变量 {{ messages }} 出现在模板的context中。
+
+{% if messages %}
+<ul>
+    {% for message in messages %}
+    <li>{{ message }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+需要注意的是 RequestContext 会在后台调用 get_and_delete_messages ，因此即使你没有显示它们，它们也会被删除掉。
+
+
+##缓存机制##
+动态网站的问题就在于它是动态的。 也就是说每次用户访问一个页面，服务器要执行数据库查询，启动模板，执行业务逻辑以及最终生成一个你所看到的网页，这一切都是动态即时生成的。
+缓存的目的是为了避免重复计算，特别是对一些比较耗时间、资源的计算。 下面的伪代码演示了如何对动态页面的结果进行缓存。
+
+given a URL, try finding that page in the cache
+if the page is in the cache:
+    return the cached page
+else:
+    generate the page
+    save the generated page in the cache (for next time)
+    return the generated page
+
+Django提供了一个稳定的缓存系统让你缓存动态页面的结果，这样在接下来有相同的请求就可以直接使用缓存中的数据，避免不必要的重复计算。 另外Django还提供了不同粒度数据的缓存，例如： 你可以缓存整个页面，也可以缓存某个部分，甚至缓存整个网站。
+
+【设定缓存】
+缓存设置在settings文件的 CACHE_BACKEND中。 这里是一个CACHE_BACKEND所有可用值的解释。
+
+【内存缓存】
+在这个例子中，Memcached运行在本地主机 (127.0.0.1)上,端口为11211：
+CACHE_BACKEND = 'memcached://127.0.0.1:11211/'
+
+这个例子中，缓存在运行在IP地址为172.19.26.240和172.19.26.242，端口号为11211的Memcached实例间分享:
+CACHE_BACKEND = 'memcached://172.19.26.240:11211;172.19.26.242:11211/'
+
+这个例子中，缓存在运行在172.19.26.240(端口11211)，172.19.26.242(端口11212)，172.19.26.244(端口11213)的Memcached实例间分享:
+CACHE_BACKEND = 'memcached://172.19.26.240:11211;172.19.26.242:11212;172.19.26.244:11213/'
+
+【数据库缓存】
+一旦你创建了数据库表，把你的CACHE_BACKEND设置为”db://tablename”，这里的tablename是数据库表的名字，在这个例子中，缓存表名为my_cache_table: 在这个例子中，高速缓存表的名字是my_cache_table：
+CACHE_BACKEND = 'db://my_cache_table'
+
+【文件系统缓存】
+要把缓存项目放在文件系统上，请为CACHE_BACKEND使用”file://“的缓存类型。例如，要把缓存数据存储在/var/tmp/django_cache上，请使用此设置：
+CACHE_BACKEND = 'file:///var/tmp/django_cache'
+
+【CACHE_BACKEND参数】
+timeout:用于缓存的过期时间，以秒为单位。 这个参数默认被设置为300秒（五分钟）。
+
+max_entries：对于内存，文件系统和数据库后端，高速缓存允许的最大条目数，超出这个数则旧值将被删除。 这个参数默认是300。
+
+cull_percentage :当达到 max_entries 的时候,被删除的条目比率。 实际的比率是 1/cull_percentage ,所以设置cull_frequency=2就是在达到 max_entries 的时候去除一半数量的缓存。
+
+把 cull_frequency 的值设置为 0 意味着当达到 max_entries 时,缓存将被清空。 这将以很多缓存丢失为代价,大大提高接受访问的速度。
+
+在这个例子中， timeout 被设成 60
+CACHE_BACKEND = "memcached://127.0.0.1:11211/?timeout=60"
+
+而在这个例子中， timeout 设为 30 而 max_entries 为 400 :
+CACHE_BACKEND = "locmem:///?timeout=30&max_entries=400"
+
+【站点级 Cache】
+一旦高速缓存设置，最简单的方法是使用缓存缓存整个网站。 您 需要添加’django.middleware.cache.UpdateCacheMiddleware’和 ‘django.middleware.cache.FetchFromCacheMiddleware’到您的MIDDLEWARE_CLASSES设置中，在这个例子中是：
+
+MIDDLEWARE_CLASSES = (
+    'django.middleware.cache.UpdateCacheMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.cache.FetchFromCacheMiddleware',
+)
+
+注意：
+
+不，这里并没有排版错误： 修改的中间件，必须放在列表的开始位置，而fectch中间件，必须放在最后。 细节有点费解，如果您想了解完整内幕请参看下面的MIDDLEWARE_CLASSES顺序。
+
+然后，在你的Django settings文件里加入下面所需的设置：
+    CACHE_MIDDLEWARE_SECONDS :每个页面应该被缓存的秒数。
+    CACHE_MIDDLEWARE_KEY_PREFIX ：如果缓存被多个使用相同Django安装的网站所共享，那么把这个值设成当前网站名，或其他能代表这个Django实例的唯一字符串，以避免key发生冲突。 如果你不在意的话可以设成空字符串。
+
+缓存中间件缓存每个没有GET或者POST参数的页面。 或者，如果CACHE_MIDDLEWARE_ANONYMOUS_ONLY设置为True，只有匿名请求（即不是由登录的用户）将被缓存。 如果想取消用户相关页面（user-specific pages）的缓存，例如Djangos 的管理界面，这是一种既简单又有效的方法。 CACHE_MIDDLEWARE_ANONYMOUS_ONLY，你应该确保你已经启动AuthenticationMiddleware。
+
+此外，缓存中间件为每个HttpResponse自动设置了几个头部信息：
+    当一个新(没缓存的)版本的页面被请求时设置Last-Modified头部为当前日期/时间
+
+    设置Expires头部为当前日期/时间加上定义的CACHE_MIDDLEWARE_SECONDS。
+    设置Cache-Control头部来给页面一个最长的有效期，值来自于CACHE_MIDDLEWARE_SECONDS设置。
+
+如果视图设置自己的缓存到期时间（即 它有一个最大年龄在头部信息的Cache-Control中），那么页面将缓存直到过期，而不是CACHE_MIDDLEWARE_SECONDS。使用django.views.decorators.cache装饰器，您可以轻松地设置视图的到期时间（使用cache_control装饰器）或禁用缓存视图（使用never_cache装饰器）。
+
+【视图级缓存】
+更加颗粒级的缓存框架使用方法是对单个视图的输出进行缓存。 django.views.decorators.cache定义了一个自动缓存视图响应的cache_page装饰器。 他是很容易使用的:
+
+from django.views.decorators.cache import cache_page
+
+def my_view(request):
+    # ...
+
+my_view = cache_page(my_view, 60 * 15)
+
+cache_page 只接受一个参数： 以秒计的缓存超时时间。 在前例中， “my_view()” 视图的结果将被缓存 15 分钟。 （注意： 为了提高可读性，该参数被书写为 60 * 15 。 60 * 15 将被计算为 900 ，也就是说15 分钟乘以每分钟 60 秒。）
+
+和站点缓存一样，视图缓存与 URL 无关。 如果多个 URL 指向同一视图，每个视图将会分别缓存。 继续 my_view 范例，如果 URLconf 如下所示：
+
+urlpatterns = ('',
+    (r'^foo/(\d{1,2})/$', my_view),
+)
+
+那么正如你所期待的那样，发送到 /foo/1/ 和 /foo/23/ 的请求将会分别缓存。 但一旦发出了特定的请求（如： /foo/23/ ），之后再度发出的指向该 URL 的请求将使用缓存
+
+【在 URLconf 中指定视图缓存】
+前一节中的范例将视图硬编码为使用缓存，因为 cache_page 在适当的位置对 my_view 函数进行了转换。 该方法将视图与缓存系统进行了耦合，从几个方面来说并不理想。 例如，你可能想在某个无缓存的站点中重用该视图函数，或者你可能想将该视图发布给那些不想通过缓存使用它们的人。 解决这些问题的方法是在 URLconf 中指定视图缓存，而不是紧挨着这些视图函数本身来指定。
+
+完成这项工作非常简单： 在 URLconf 中用到这些视图函数的时候简单地包裹一个 cache_page 。以下是刚才用到过的 URLconf : 这是之前的URLconf：
+urlpatterns = ('',
+    (r'^foo/(\d{1,2})/$', my_view),
+)
+
+以下是同一个 URLconf ，不过用 cache_page 包裹了 my_view ：
+from django.views.decorators.cache import cache_page
+
+urlpatterns = ('',
+    (r'^foo/(\d{1,2})/$', cache_page(my_view, 60 * 15)),
+)
+
+如果采取这种方法, 不要忘记在 URLconf 中导入 cache_page。
+
+【模板碎片缓存】
+你同样可以使用cache标签来缓存模板片段。 在模板的顶端附近加入{% load cache %}以通知模板存取缓存标签。
+模板标签{% cache %}在给定的时间内缓存了块的内容。 它至少需要两个参数: 缓存超时时间（以秒计）和指定缓存片段的名称。 示例：
+
+{% load cache %}
+{% cache 500 sidebar %}
+    .. sidebar ..
+{% endcache %}
+
+有时你可能想缓存基于片段的动态内容的多份拷贝。 比如，你想为上一个例子的每个用户分别缓存侧边栏。 这样只需要给{% cache %}传递额外的参数以标识缓存片段。
+
+{% load cache %}
+{% cache 500 sidebar request.user.username %}
+    .. sidebar for logged in user ..
+{% endcache %}
+
+传递不止一个参数也是可行的。 简单地把参数传给{% cache %}。
+
+缓存超时时间可以作为模板变量，只要它可以解析为整数值。 例如，如果模板变量my_timeout值为600，那么以下两个例子是等价的。
+
+{% cache 600 sidebar %} ... {% endcache %}
+{% cache my_timeout sidebar %} ... {% endcache %}
+
+这个特性在避免模板重复方面非常有用。 可以把超时时间保存在变量里，然后在别的地方复用。
+
+【低层次缓存API】
+Django提供了简单低级的缓存API。 你可以通过这个API，以任何你需要的粒度来缓存对象。 你可以对所有能够安全进行 pickle 处理的 Python 对象进行缓存： 字符串、字典和模型对象列表等等。
+缓存模块django.core.cache拥有一个自动依据CACHE_BACKEND设置创建的django.core.cache对象。
+
+>>> from django.core.cache import cache
+
+基本的接口是 set(key, value, timeout_seconds) 和 get(key) :
+
+>>> cache.set('my_key', 'hello, world!', 30)
+>>> cache.get('my_key')
+'hello, world!'
+cache.get() 接受一个 缺省 参数。 它指定了当缓存中不存在该对象时所返回的值：
+
+>>> cache.get('my_key', 'has expired')
+'has expired'
+
+使用add()方法来新增一个原来没有的键值。 它接受的参数和set()一样，但是并不去尝试更新已经存在的键值。
+
+>>> cache.set('add_key', 'Initial value')
+>>> cache.add('add_key', 'New value')
+>>> cache.get('add_key')
+'Initial value'
+
+如果想确定add()是否成功添加了缓存值，你应该测试返回值。 成功返回True，失败返回False。
+
+还有个get_many()接口。 get_many() 所返回的字典包括了你所请求的存在于缓存中且未超时的所有键值。
+
+>>> cache.set('a', 1)
+>>> cache.set('b', 2)
+>>> cache.set('c', 3)
+>>> cache.get_many(['a', 'b', 'c'])
+{'a': 1, 'b': 2, 'c': 3}
+也可以使用incr()或者decr()来增加或者减少已经存在的键值。 默认情况下，增加或减少的值是1。可以用参数来制定其他值。 如果尝试增减不存在的键值会抛出ValueError。
+
+>>> cache.set('num', 1)
+>>> cache.incr('num')
+2
+>>> cache.incr('num', 10)
+12
+>>> cache.decr('num')
+11
+>>> cache.decr('num', 5)
+6
+
+【上游缓存】
+上游缓存的几个例子：
+你的 ISP (互联网服务商)可能会对特定的页面进行缓存。
+你的网页浏览器也对页面进行缓存。
+
+上游缓存将会产生非常明显的效率提升，但也存在一定风险。 许多网页的内容依据身份验证以及许多其他变量的情况发生变化，缓存系统仅盲目地根据 URL 保存页面，可能会向这些页面的后续访问者暴露不正确或者敏感的数据。
+ HTTP 提供了解决该问题的方案。 已有一些 HTTP 头标用于指引上游缓存根据指定变量来区分缓存内容，并通知缓存机制不对特定页面进行缓存。
+
+【使用 Vary头部】
+Vary 头部定义了缓存机制在构建其缓存键值时应当将哪个请求头标考虑在内。 例如，如果网页的内容取决于用户的语言偏好，该页面被称为根据语言而不同。
+缺省情况下，Django 的缓存系统使用所请求的路径（比如："/stories/2005/jun/23/bank_robbed/" ）来创建其缓存键。这意味着每次请求都会使用同样的缓存版本，不考虑才客户端cookie和语言配置的不同。 除非你使用Vary头部通知缓存机制页面输出要依据请求头里的cookie，语言等的设置而不同。
+
+要在 Django 完成这项工作，可使用便利的 vary_on_headers 视图装饰器，如下所示：
+
+from django.views.decorators.vary import vary_on_headers
+
+# Python 2.3 syntax.
+def my_view(request):
+    # ...
+my_view = vary_on_headers(my_view, 'User-Agent')
+
+# Python 2.4+ decorator syntax.
+@vary_on_headers('User-Agent')
+def my_view(request):
+    # ...
+
+在这种情况下，缓存机制（如 Django 自己的缓存中间件）将会为每一个单独的用户浏览器缓存一个独立的页面版本。
+
+使用 vary_on_headers 装饰器而不是手动设置 Vary 头部（使用像 response['Vary'] = 'user-agent' 之类的代码）的好处是修饰器在（可能已经存在的） Vary 之上进行 添加 ，而不是从零开始设置，且可能覆盖该处已经存在的设置。
+
+你可以向 vary_on_headers() 传入多个头标：
+
+@vary_on_headers('User-Agent', 'Cookie')
+def my_view(request):
+    # ...
+
+该段代码通知上游缓存对 两者 都进行不同操作，也就是说 user-agent 和 cookie 的每种组合都应获取自己的缓存值。 举例来说，使用 Mozilla 作为 user-agent 而 foo=bar 作为 cookie 值的请求应该和使用 Mozilla 作为 user-agent 而 foo=ham 的请求应该被视为不同请求。
+
+由于根据 cookie 而区分对待是很常见的情况，因此有 vary_on_cookie 装饰器。 以下两个视图是等效的：
+
+@vary_on_cookie
+def my_view(request):
+    # ...
+
+@vary_on_headers('Cookie')
+def my_view(request):
+    # ...
+
+传入 vary_on_headers 头标是大小写不敏感的； "User-Agent" 与 "user-agent" 完全相同。
+
+你也可以直接使用帮助函数：django.utils.cache.patch_vary_headers。 该函数设置或增加 Vary header ，例如：
+
+from django.utils.cache import patch_vary_headers
+
+def my_view(request):
+    # ...
+    response = render_to_response('template_name', context)
+    patch_vary_headers(response, ['Cookie'])
+    return response
+
+patch_vary_headers 以一个 HttpResponse 实例为第一个参数，以一个大小写不敏感的头标名称列表或元组为第二个参数。
+
+【控制缓存： 使用其它头部】
+关于缓存剩下的问题是数据的隐私性以及在级联缓存中数据应该在何处储存的问题。
+通常用户将会面对两种缓存： 他或她自己的浏览器缓存（私有缓存）以及他或她的提供者缓存（公共缓存）。 公共缓存由多个用户使用，而受其他某人的控制。 这就产生了你不想遇到的敏感数据的问题，比如说你的银行账号被存储在公众缓存中。 因此，Web 应用程序需要以某种方式告诉缓存那些数据是私有的，哪些是公共的。
+
+解决方案是标示出某个页面缓存应当是私有的。 要在 Django 中完成此项工作，可使用 cache_control 视图修饰器： 例如：
+
+from django.views.decorators.cache import cache_control
+
+@cache_control(private=True)
+def my_view(request):
+    # ...
+
+该修饰器负责在后台发送相应的 HTTP 头部。
+
+还有一些其他方法可以控制缓存参数。 例如, HTTP 允许应用程序执行如下操作:
+
+    定义页面可以被缓存的最大时间。
+
+    指定某个缓存是否总是检查较新版本，仅当无更新时才传递所缓存内容。 （一些缓存即便在服务器页面发生变化的情况下仍然会传送所缓存的内容，只因为缓存拷贝没有过期。）
+
+在 Django 中，可使用 cache_control 视图修饰器指定这些缓存参数。 在本例中， cache_control 告诉缓存对每次访问都重新验证缓存并在最长 3600 秒内保存所缓存版本：
+
+from django.views.decorators.cache import cache_control
+
+@cache_control(must_revalidate=True, max_age=3600)
+def my_view(request):
+    # ...
+
+在 cache_control() 中，任何合法的Cache-Control HTTP 指令都是有效的。下面是完整列表：
+    public=True
+    private=True
+    no_cache=True
+    no_transform=True
+    must_revalidate=True
+    proxy_revalidate=True
+    max_age=num_seconds
+    s_maxage=num_seconds
+缓存中间件已经使用 CACHE_MIDDLEWARE_SETTINGS 设置设定了缓存头部 max-age 。 如果你在cache_control修饰器中使用了自定义的max_age，该修饰器将会取得优先权，该头部的值将被正确地被合并。
+
+如果你想用头部完全禁掉缓存，django.views.decorators.cache.never_cache装饰器可以添加确保响应不被缓存的头部信息。 例如：
+
+from django.views.decorators.cache import never_cache
+
+@never_cache
+def myview(request):
+    # ...
+
+【MIDDLEWARE_CLASSES 的顺序】
+如果使用缓存中间件，注意在MIDDLEWARE_CLASSES设置中正确配置。 因为缓存中间件需要知道哪些头部信息由哪些缓存区来区分。 中间件总是尽可能得想Vary响应头中添加信息。
+
+UpdateCacheMiddleware在相应阶段运行。因为中间件是以相反顺序运行的，所有列表顶部的中间件反而last在相应阶段的最后运行。 所有，你需要确保UpdateCacheMiddleware排在任何可能往Vary头部添加信息的中间件之前。 下面的中间件模块就是这样的：
+
+    添加 Cookie 的 SessionMiddleware
+
+    添加 Accept-Encoding 的 GZipMiddleware
+
+    添加Accept-Language的LocaleMiddleware
+
+另一方面，FetchFromCacheMiddleware在请求阶段运行，这时中间件循序执行，所以列表顶端的项目会首先执行。 FetchFromCacheMiddleware也需要在会修改Vary头部的中间件之后运行，所以FetchFromCacheMiddleware必须放在它们后面。
+
+
+##集成的子框架 django.contrib##
+
+【Django标准库】
