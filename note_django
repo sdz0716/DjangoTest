@@ -2421,3 +2421,901 @@ UpdateCacheMiddleware在相应阶段运行。因为中间件是以相反顺序�
 ##集成的子框架 django.contrib##
 
 【Django标准库】
+Django的标准库存放在 django.contrib 包中。每个子包都是一个独立的附加功能包。 这些子包一般是互相独立的，不过有些django.contrib子包需要依赖其他子包。
+
+django.contrib 由以下开发包组成：
+    admin : 自动化的站点管理工具。 请查看第6章。
+    admindocs:为Django admin站点提供自动文档。 本书没有介绍这方面的知识；详情请参阅Django官方文档。
+    auth : Django的用户验证框架。 参见第十四章。
+    comments : 一个评论应用，目前，这个应用正在紧张的开发中，因此在本书出版的时候还不能给出一个完整的说明，关于这个应用的更多信息请参见Django的官方网站. 本书没有介绍这方面的知识；详情请参阅Django官方文档。
+    contenttypes : 这是一个用于引入文档类型的框架，每个安装的Django模块作为一种独立的文档类型。 这个框架主要在Django内部被其他应用使用，它主要面向Django的高级开发者。 可以通过阅读源码来了解关于这个框架的更多信息，源码的位置在 django/contrib/contenttypes/。
+    csrf : 这个模块用来防御跨站请求伪造(CSRF)。参 见后面标题为”CSRF 防御”的小节。
+    databrowse：帮助你浏览数据的Django应用。 本书没有介绍这方面的知识；详情请参阅Django官方文档。
+    flatpages : 一个在数据库中管理单一HTML内容的模块。 参见后面标题为“Flatpages”的小节。
+    formtools：一些列处理表单通用模式的高级库。 本书没有介绍这方面的知识；详情请参阅Django官方文档。
+    gis：为Django提供GIS（Geographic Information Systems）支持的扩展。 举个例子，它允许你的Django模型保存地理学数据并执行地理学查询。 这个库比较复杂，本书不详细介绍。 请参看http://geodjango.org/上的文档。
+    humanize : 一系列 Django 模块过滤器，用于增加数据的人性化。 参阅稍后的章节《人性化数据》。
+    localflavor：针对不同国家和文化的混杂代码段。 例如，它包含了验证美国的邮编 以及爱尔兰的身份证号的方法。
+    markup : 一系列的 Django 模板过滤器，用于实现一些常用标记语言。 参阅后续章节《标记过滤器》。
+    redirects : 用来管理重定向的框架。 参看后面的“重定向”小节。
+    sessions : Django 的会话框架。 参见14章。
+    sitemaps : 用来生成网站地图的 XML 文件的框架。 参见13章。
+    sites : 一个让你可以在同一个数据库与 Django 安装中管理多个网站的框架。 参见下一节：
+    syndication : 一个用 RSS 和 Atom 来生成聚合订阅源的的框架。 参见13章。
+    webdesign：对设计者非常有用的Django扩展。 到编写此文时，它只包含一个模板标签{% lorem %}。详情参阅Django文档。
+
+【多个站点】
+Django 的多站点系统是一种通用框架，它让你可以在同一个数据库和同一个Django项目下操作多个网站。
+
+情景1：多站点间复用数据
+情景2：把网站的名字/域名保存在一个地方
+
+多站点框架与其说是一个框架，不如说是一系列约定。所有的一切都基于两个简单的概念：
+    位于 django.contrib.sites 的 Site 模型有 domain 和 name 两个字段。
+    SITE_ID 设置指定了与特定配置文件相关联的 Site 对象之数据库 ID。
+
+安装多站点应用要执行以下几个步骤：
+    将 'django.contrib.sites' 加入到INSTALLED_APPS 中。
+    运行 manage.py syncdb 命令将 django_site 表安装到数据库中。 这样也会建立默认的站点对象，域名为 example.com。
+    把example.com改成你自己的域名，然后通过Django admin站点或Python API来添加其他Site对象。 为该 Django 项目支撑的每个站（或域）创建一个 Site 对象。
+    在每个设置文件中定义一个 SITE_ID 变量。 该变量值应当是该设置文件所支撑的站点Site 对象的数据库 ID。
+
+【多站点框架的功能】
+
+##多个站点的数据重用
+正如在情景一中所解释的，要在多个站点间重用数据,仅需在模型中为 Site 添加一个 多对多字段 即可，例如：
+
+from django.db import models
+from django.contrib.sites.models import Site
+
+class Article(models.Model):
+    headline = models.CharField(max_length=200)
+    # ...
+    sites = models.ManyToManyField(Site)
+
+这是在数据库中为多个站点进行文章关联操作的基础步骤。 在适当的位置使用该技术，你可以在多个站点中重复使用同一段 Django 视图代码。 继续 Article 模型范例，下面是一个可能的 article_detail 视图：
+
+from django.conf import settings
+from django.shortcuts import get_object_or_404
+from mysite.articles.models import Article
+
+def article_detail(request, article_id):
+    a = get_object_or_404(Article, id=article_id, sites__id=settings.SITE_ID)
+    # ...
+
+该视图方法是可重用的，因为它根据 SITE_ID 设置的值动态检查 articles 站点。
+
+例如， LJWorld.coms 设置文件中有有个 SITE_ID 设置为 1 ，而 Lawrence.coms 设置文件中有个 SITE_ID 设置为 2 。如果该视图在 LJWorld.coms 处于激活状态时被调用，那么它将把查找范围局限于站点列表包括 LJWorld.com 在内的文章。
+
+##将内容与单一站点相关联
+
+同样，你也可以使用 外键 在多对一关系中将一个模型关联到 Site 模型。
+
+举例来说，如果某篇文章仅仅能够出现在一个站点上，你可以使用下面这样的模型：
+
+from django.db import models
+from django.contrib.sites.models import Site
+
+class Article(models.Model):
+    headline = models.CharField(max_length=200)
+    # ...
+    site = models.ForeignKey(Site)
+
+这与前一节中介绍的一样有益。
+
+##从视图钩挂当前站点
+
+在底层，通过在 Django 视图中使用多站点框架，你可以让视图根据调用站点不同而完成不同的工作，例如：
+
+from django.conf import settings
+
+def my_view(request):
+    if settings.SITE_ID == 3:
+        # Do something.
+    else:
+        # Do something else.
+
+当然，像那样对站点 ID 进行硬编码是比较难看的。 略为简洁的完成方式是查看当前的站点域：
+
+from django.conf import settings
+from django.contrib.sites.models import Site
+
+def my_view(request):
+    current_site = Site.objects.get(id=settings.SITE_ID)
+    if current_site.domain == 'foo.com':
+        # Do something
+    else:
+        # Do something else.
+
+从 Site 对象中获取 settings.SITE_ID 值的做法比较常见，因此 Site 模型管理器 (Site.objects ) 具备一个 get_current() 方法。 下面的例子与前一个是等效的：
+
+from django.contrib.sites.models import Site
+
+def my_view(request):
+    current_site = Site.objects.get_current()
+    if current_site.domain == 'foo.com':
+        # Do something
+    else:
+        # Do something else.
+
+##获取当前域用于呈现
+正如情景二中所解释的那样，依据DRY原则(不做重复工作)，你只需在一个位置储存站名和域名，然后引用当前 Site 对象的 name 和 domain 。例如：
+
+from django.contrib.sites.models import Site
+from django.core.mail import send_mail
+
+def register_for_newsletter(request):
+    # Check form values, etc., and subscribe the user.
+    # ...
+    current_site = Site.objects.get_current()
+    send_mail('Thanks for subscribing to %s alerts' % current_site.name,
+        'Thanks for your subscription. We appreciate it.\n\n-The %s team.' % current_site.name,
+        'editor@%s' % current_site.domain,
+        [user_email])
+    # ...
+
+继续我们正在讨论的 LJWorld.com 和 Lawrence.com 例子，在Lawrence.com 该邮件的标题行是“感谢注册 Lawrence.com 提醒信件”。 在 LJWorld.com ，该邮件标题行是“感谢注册 LJWorld.com 提醒信件”。 这种站点关联行为方式对邮件信息主体也同样适用。
+
+完成这项工作的一种更加灵活（但更重量级）的方法是使用 Django 的模板系统。 假定 Lawrence.com 和 LJWorld.com 各自拥有不同的模板目录（ TEMPLATE_DIRS ），你可将工作轻松地转交给模板系统，如下所示：
+
+from django.core.mail import send_mail
+from django.template import loader, Context
+
+def register_for_newsletter(request):
+    # Check form values, etc., and subscribe the user.
+    # ...
+    subject = loader.get_template('alerts/subject.txt').render(Context({}))
+    message = loader.get_template('alerts/message.txt').render(Context({}))
+    send_mail(subject, message, 'do-not-reply@example.com', [user_email])
+    # ...
+
+本例中，你不得不在 LJWorld.com 和 Lawrence.com 的模板目录中都创建一份 subject.txt 和 message.txt 模板。 正如之前所说，该方法带来了更大的灵活性，但也带来了更多复杂性。
+
+尽可能多的利用 Site 对象是减少不必要的复杂、冗余工作的好办法。
+
+【当前站点管理器】
+如果 站点 在你的应用中扮演很重要的角色，请考虑在你的模型中使用方便的 CurrentSiteManager 。 这是一个模型管理器（见第十章），它会自动过滤使其只包含与当前站点相关联的对象。
+通过显示地将 CurrentSiteManager 加入模型中以使用它。 例如：
+
+from django.db import models
+from django.contrib.sites.models import Site
+from django.contrib.sites.managers import CurrentSiteManager
+
+class Photo(models.Model):
+    photo = models.FileField(upload_to='/home/photos')
+    photographer_name = models.CharField(max_length=100)
+    pub_date = models.DateField()
+    site = models.ForeignKey(Site)
+    objects = models.Manager()
+    on_site = CurrentSiteManager()
+
+通过该模型， Photo.objects.all() 将返回数据库中所有的 Photo 对象，而 Photo.on_site.all() 仅根据 SITE_ID 设置返回与当前站点相关联的 Photo 对象。
+
+换言之，以下两条语句是等效的：
+
+Photo.objects.filter(site=settings.SITE_ID)
+Photo.on_site.all()
+
+CurrentSiteManager 是如何知道 Photo 的哪个字段是 Site 呢？缺省情况下，它会查找一个叫做 site 的字段。如果你的模型包含了名字不是site的外键或者多对多关联，你需要把它作为参数传给CurrentSiteManager以显示指明。下面的模型拥有一个publish_on字段：
+
+from django.db import models
+from django.contrib.sites.models import Site
+from django.contrib.sites.managers import CurrentSiteManager
+
+class Photo(models.Model):
+    photo = models.FileField(upload_to='/home/photos')
+    photographer_name = models.CharField(max_length=100)
+    pub_date = models.DateField()
+    publish_on = models.ForeignKey(Site)
+    objects = models.Manager()
+    on_site = CurrentSiteManager('publish_on')
+
+如果试图使用 CurrentSiteManager 并传入一个不存在的字段名， Django 将引发一个 ValueError 异常。
+
+注意
+
+即便是已经使用了 CurrentSiteManager ，你也许还想在模型中拥有一个正常的（非站点相关）的 管理器 。正如在附录 B 中所解释的，如果你手动定义了一个管理器，那么 Django 不会为你创建全自动的 objects = models.Manager() 管理器。
+
+同样，Django 的特定部分（即 Django 超级管理站点和通用视图）使用在模型中定义 的第一个管理器，因此如果希望管理站点能够访问所有对象（而不是仅仅站点特有对象），请于定义 CurrentSiteManager 之前在模型中放入 objects = models.Manager() 。
+
+【Django如何使用多站点框架】
+以下讲述的是 Django 如何使用多站点框架：
+    在重定向框架中（见后面的重定向一节），每一个重定向对象都与一个特定站点关联。 当 Django 搜索重定向的时候，它会考虑当前的 SITE_ID 。
+    在注册框架中，每个注释都与特定站点相关。 每个注释被显示时，其 site 被设置为当前的 SITE_ID ，而当通过适当的模板标签列出注释时，只有当前站点的注释将会显示。
+    在 flatpages 框架中 (参见后面的 Flatpages 一节），每个 flatpage 都与特定的站点相关联。 创建 flatpage 时，你都将指定它的 site ，而 flatpage 中间件在获取 flatpage 以显示它的过程中，将查看当前的 SITE_ID 。
+    在 syndication 框架中（参阅第 13 章）， title 和 description 的模板会自动访问变量 {{ site }} ，它其实是代表当前站点的 Site 对象。 而且，如果你不指定一个合格的domain的话，提供目录URL的钩子将会使用当前“Site”对象的domain。
+    在权限框架中（参见十四章），视图django.contrib.auth.views.login把当前Site名字和对象分别以{{ site_name }}和{{ site }}的形式传给了模板。
+
+【Flatpages(简单页面)】
+该应用让你能够通过 Django 管理站点来管理这些一次性的页面，还可以让你使用 Django 模板系统指定它们使用哪个模板。 它在后台使用Django模型，这意味着它把页面项别的数据一样保存在数据库中，也就是说你可以使用标准Django数据库API来存取页面。
+
+##使用简单页面
+安装简单页面应用程序必须按照下面的步骤：
+    添加 'django.contrib.flatpages' 到 INSTALLED_APPS 设置。django.contrib.flatpages依赖django.contrib.sites，所以确保它们都在INSTALLED_APPS里。
+    将 'django.contrib.flatpages.middleware.FlatpageFallbackMiddleware' 添加到 MIDDLEWARE_CLASSES 设置中。
+    运行 manage.py syncdb 命令在数据库中创建必需的两个表。
+
+简单页面应用程序在数据库中创建两个表： django_flatpage 和 django_flatpage_sites 。 django_flatpage 只是将 URL 映射到标题和一段文本内容。 django_flatpage_sites 是一个多对多表，用于关联某个简单页面以及一个或多个站点。
+
+该应用捆绑的 FlatPage 模型在 django/contrib/flatpages/models.py 进行定义，如下所示：
+
+from django.db import models
+from django.contrib.sites.models import Site
+
+class FlatPage(models.Model):
+    url = models.CharField(max_length=100, db_index=True)
+    title = models.CharField(max_length=200)
+    content = models.TextField(blank=True)
+    enable_comments = models.BooleanField()
+    template_name = models.CharField(max_length=70, blank=True)
+    registration_required = models.BooleanField()
+    sites = models.ManyToManyField(Site)
+
+让我们逐项看看这些字段的含义：
+    url : 该简单页面所处的 URL，不包括域名，但是包含前导斜杠 (例如 /about/contact/ )。
+    title : 简单页面的标题。 框架不对它作任何特殊处理。 由你通过模板来显示它。
+    content : 简单页面的内容 (即 HTML 页面)。 框架不对它作任何特殊处理。 由你负责使用模板来显示。
+    enable_comments : 是否允许该简单页面使用评论。 框架不对它作任何特殊处理。 你可在模板中检查该值并根据需要显示评论窗体。
+    template_name : 用来解析该简单页面的模板名称。 这是一个可选项；如果未指定模板或该模板不存在，系统会退而使用默认模板 flatpages/default.html 。
+    registration_required : 是否注册用户才能查看此简单页面。 该设置项集成了 Djangos 验证/用户框架，该框架于第十四章详述。
+    sites : 该简单页面放置的站点。 该项设置集成了 Django 多站点框架，该框架在本章的“多站点”一节中有所阐述。
+
+你可以通过 Django 超级管理界面或者 Django 数据库 API 来创建简单页面。 要了解更多内容，请查阅“添加、修改和删除简单页面”一节。
+
+一旦简单页面创建完成， FlatpageFallbackMiddleware 将完成（剩下）所有的工作。 每当 Django 引发 404 错误，作为最后的办法，该中间件将根据所请求的 URL 检查简单页面数据库。 确切地说，它将使用所指定的 URL以及 SITE_ID 设置对应的站点 ID 查找一个简单页面。
+
+如果找到一个匹配项，它将载入该简单页面的模板（如果没有指定的话，将使用默认模板 flatpages/default.html ）。 同时，它把一个简单的上下文变量flatpage（一个简单页面对象）传递给模板。 模板解析过程中，它实际用的是RequestContext。
+
+如果 FlatpageFallbackMiddleware 没有找到匹配项，该请求继续如常处理。
+
+注意
+
+该中间件仅在发生 404 （页面未找到）错误时被激活，而不会在 500 （服务器错误）或其他错误响应时被激活。 还要注意的是必须考虑 MIDDLEWARE_CLASSES 的顺序问题。 通常，你可以把 FlatpageFallbackMiddleware 放在列表最后，因为它是最后的办法。
+
+##添加、修改和删除简单页面
+可以用两种方式增加、变更或删除简单页面：
+通过超级管理界面
+
+如果已经激活了自动的 Django 超级管理界面，你将会在超级管理页面的首页看到有个 Flatpages 区域。 你可以像编辑系统中其它对象那样编辑简单页面。
+通过 Python API
+
+前面已经提到，简单页面表现为 django/contrib/flatpages/models.py 中的标准 Django 模型。这样，你就可以使用Django数据库API来存取简单页面对象，例如：
+
+>>> from django.contrib.flatpages.models import FlatPage
+>>> from django.contrib.sites.models import Site
+>>> fp = FlatPage.objects.create(
+...     url='/about/',
+...     title='About',
+...     content='<p>About this site...</p>',
+...     enable_comments=False,
+...     template_name='',
+...     registration_required=False,
+... )
+>>> fp.sites.add(Site.objects.get(id=1))
+>>> FlatPage.objects.get(url='/about/')
+<FlatPage: /about/ -- About>
+
+##使用简单页面模板
+缺省情况下，系统使用模板 flatpages/default.html 来解析简单页面，但你也可以通过设定 FlatPage 对象的 template_name 字段来更改特定简单页面的模板。
+
+你必须自己创建 flatpages/default.html 模板。 只需要在模板目录创建一个 flatpages 目录，并把 default.html 文件置于其中。
+
+简单页面模板只接受有一个上下文变量—— flatpage ，也就是该简单页面对象。
+
+以下是一个 flatpages/default.html 模板范例:
+
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+    "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html>
+<head>
+<title>{{ flatpage.title }}</title>
+</head>
+<body>
+{{ flatpage.content|safe }}
+</body>
+</html>
+
+注意我们使用了safe模板过滤器来允许flatpage.content引入原始HTML而不必转义。
+
+【重定向】
+通过将重定向存储在数据库中并将其视为 Django 模型对象，Django 重定向框架让你能够轻松地管理它们。 比如说，你可以通过重定向框架告诉Django，把任何指向 /music/ 的请求重定向到 /sections/arts/music/ 。当你需要在站点中移动一些东西时，这项功能就派上用场了——网站开发者应该穷尽一切办法避免出现坏链接。
+
+##使用重定向框架
+安装重定向应用程序必须遵循以下步骤：
+
+    将 'django.contrib.redirects' 添加到 INSTALLED_APPS 设置中。
+
+    将 'django.contrib.redirects.middleware.RedirectFallbackMiddleware' 添加到 MIDDLEWARE_CLASSES 设置中。
+
+    运行 manage.py syncdb 命令将所需的表添加到数据库中。
+
+manage.py syncdb 在数据库中创建了一个 django_redirect 表。 这是一个简单的查询表，只有site_id、old_path和new_path三个字段。
+
+你可以通过 Django 超级管理界面或者 Django 数据库 API 来创建重定向。 要了解更多信息，请参阅“增加、变更和删除重定向”一节。
+
+一旦创建了重定向， RedirectFallbackMiddleware 类将完成所有的工作。 每当 Django 应用引发一个 404 错误，作为终极手段，该中间件将为所请求的 URL 在重定向数据库中进行查找。 确切地说，它将使用给定的 old_path 以及 SITE_ID 设置对应的站点 ID 查找重定向设置。 （查阅前面的“多站点”一节可了解关于 SITE_ID 和多站点框架的更多细节） 然后，它将执行以下两个步骤：
+
+    如果找到了匹配项，并且 new_path 非空，它将重定向到 new_path 。
+
+    如果找到了匹配项，但 new_path 为空，它将发送一个 410 (Gone) HTTP 头信息以及一个空（无内容）响应。
+
+    如果未找到匹配项，该请求将如常处理。
+
+该中间件仅为 404 错误激活，而不会为 500 错误或其他任何状态码的响应所激活。
+
+注意必须考虑 MIDDLEWARE_CLASSES 的顺序。 通常，你可以将 RedirectFallbackMiddleware 放置在列表的最后，因为它是一种终极手段。
+
+注意
+
+如果同时使用重定向和简单页面回退中间件， 必须考虑先检查其中的哪一个（重定向或简单页面）。 我们建议将简单页面放在重定向之前（因此将简单页面中间件放置在重定向中间件之前），但你可能有不同想法。
+
+##增加、变更和删除重定向
+你可以两种方式增加、变更和删除重定向：
+通过管理界面
+
+如果已经激活了全自动的 Django 超级管理界面，你应该能够在超级管理首页看到重定向区域。 可以像编辑系统中其它对象一样编辑重定向。
+同过Python API
+1
+
+重定向表现为django/contrib/redirects/models.py 中的一个标准 Django 模型。因此，你可以通过Django数据库API来存取重定向对象，例如：
+
+>>> from django.contrib.redirects.models import Redirect
+>>> from django.contrib.sites.models import Site
+>>> red = Redirect.objects.create(
+...     site=Site.objects.get(id=1),
+...     old_path='/music/',
+...     new_path='/sections/arts/music/',
+... )
+>>> Redirect.objects.get(old_path='/music/')
+<Redirect: /music/ ---> /sections/arts/music/>
+
+【CSRF 防护】
+django.contrib.csrf 开发包能够防止遭受跨站请求伪造攻击 (CSRF).
+CSRF, 又叫会话跳转，是一种网站安全攻击技术。 当某个恶意网站在用户未察觉的情况下将其从一个已经通过身份验证的站点诱骗至一个新的 URL 时，这种攻击就发生了，因此它可以利用用户已经通过身份验证的状态。 乍一看，要理解这种攻击技术比较困难，因此我们在本节将使用两个例子来说明。
+
+##使用CSRF中间件
+django.contrib.csrf 开发包只有一个模块： middleware.py 。该模块包含了一个 Django 中间件类—— CsrfMiddleware ，该类实现了 CSRF 防护功能。
+
+在设置文件中将 'django.contrib.csrf.middleware.CsrfMiddleware' 添加到 MIDDLEWARE_CLASSES 设置中可激活 CSRF 防护。 该中间件必须在 SessionMiddleware 之后 执行，因此在列表中 CsrfMiddleware 必须出现在 SessionMiddleware 之前 （因为响应中间件是自后向前执行的）。 同时，它也必须在响应被压缩或解压之前对响应结果进行处理，因此 CsrfMiddleware 必须在 GZipMiddleware 之后执行。一旦将它添加到MIDDLEWARE_CLASSES设置中，你就完成了工作。 参见第十五章的“MIDDLEWARE_CLASSES顺序”小节以了解更多。
+
+##CSRF中间件的局限性
+CsrfMiddleware 的运行需要 Django 的会话框架。 （参阅第 14 章了解更多关于会话的内容。）如果你使用了自定义会话或者身份验证框架手动管理会话 cookies，该中间件将帮不上你的忙。
+如果你的应用程序以某种非常规的方法创建 HTML 页面（例如：在 Javascript 的document.write语句中发送 HTML 片段），你可能会绕开了向表单添加隐藏字段的过滤器。 在此情况下，表单提交永远无法成功。 （这是因为在页面发送到客户端之前，CsrfMiddleware使用正则表达式来添加csrfmiddlewaretoken字段到你的HTML中，而正则表达式不能处理不规范的HTML。）如果你怀疑出现了这样的问题。使用你浏览器的查看源代码功能以确定csrfmiddlewaretoken是否插入到了表单中。
+
+【人性化数据】
+包django.contrib.humanize包含了一些是数据更人性化的模板过滤器。 要激活这些过滤器，请把'django.contrib.humanize'加入到你的INSTALLED_APPS中。完成之后，向模版了加入{% load humanize %}就可以使用下面的过滤器了。
+
+##apnumber
+对于 1 到 9 的数字，该过滤器返回了数字的拼写形式。 否则，它将返回数字。 这遵循的是美联社风格。
+
+举例：
+
+    1 变成 one 。
+
+    2 变成 two 。
+
+    10 变成 10 。
+
+你可以传入一个整数或者表示整数的字符串。
+
+##intcomma
+该过滤器将整数转换为每三个数字用一个逗号分隔的字符串。
+
+例子：
+
+    4500 变成 4,500 。
+
+    45000 变成 45,000 。
+
+    450000 变成 450,000 。
+
+    4500000 变成 4,500,000 。
+
+可以传入整数或者表示整数的字符串。
+
+##intword
+该过滤器将一个很大的整数转换成友好的文本表示方式。 它对于超过一百万的数字最好用。
+
+例子：
+
+    1000000 变成 1.0 million 。
+
+    1200000 变成 1.2 million 。
+
+    1200000000 变成 1.2 billion 。
+
+最大支持不超过一千的五次方（1,000,000,000,000,000）。
+
+可以传入整数或者表示整数的字符串。
+
+##ordinal
+该过滤器将整数转换为序数词的字符串形式。
+
+例子：
+
+    1 变成 1st 。
+
+    2 变成 2nd 。
+
+    3 变成 3rd 。
+
+    254变成254th。
+
+可以传入整数或者表示整数的字符串。
+
+##标记过滤器
+包django.contrib.markup包含了一些列Django模板过滤器，每一个都实现了一中通用的标记语言。
+
+    textile : 实现了 Textile (http://en.wikipedia.org/wiki/Textile_%28markup_language%29)
+
+    markdown : 实现了 Markdown (http://en.wikipedia.org/wiki/Markdown)
+
+    restructuredtext : 实现了 ReStructured Text (http://en.wikipedia.org/wiki/ReStructuredText)
+
+每种情形下，过滤器都期望字符串形式的格式化标记，并返回表示标记文本的字符串。 例如：textile过滤器吧Textile格式的文本转换为HTML。
+
+{% load markup %}
+{{ object.content|textile }}
+
+要激活这些过滤器，仅需将 'django.contrib.markup' 添加到 INSTALLED_APPS 设置中。 一旦完成了该项工作，在模板中通过 {% load markup %} 就能使用这些过滤器。 要想掌握更多信息的话，可阅读 django/contrib/markup/templatetags/markup.py. 内的源代码。
+
+
+##中间件##
+在有些场合，需要对Django处理的每个request都执行某段代码。 这类代码可能是在view处理之前修改传入的request，或者记录日志信息以便于调试，等等。
+这类功能可以用Django的中间件框架来实现，该框架由切入到Django的request/response处理过程中的钩子集合组成。 这个轻量级低层次的plug-in系统，能用于全面的修改Django的输入和输出。
+
+【什么是中间件】
+我们从一个简单的例子开始。
+
+高流量的站点通常需要将Django部署在负载平衡proxy(参见第20章)之后。 这种方式将带来一些复杂性，其一就是每个request中的远程IP地址(request.META["REMOTE_IP"])将指向该负载平衡proxy，而不是发起这个request的实际IP。 负载平衡proxy处理这个问题的方法在特殊的 X-Forwarded-For 中设置实际发起请求的IP。
+
+因此，需要一个小小的中间件来确保运行在proxy之后的站点也能够在 request.META["REMOTE_ADDR"] 中得到正确的IP地址：
+
+class SetRemoteAddrFromForwardedFor(object):
+    def process_request(self, request):
+        try:
+            real_ip = request.META['HTTP_X_FORWARDED_FOR']
+        except KeyError:
+            pass
+        else:
+            # HTTP_X_FORWARDED_FOR can be a comma-separated list of IPs.
+            # Take just the first one.
+            real_ip = real_ip.split(",")[0]
+            request.META['REMOTE_ADDR'] = real_ip
+
+一旦安装了该中间件(参见下一节)，每个request中的 X-Forwarded-For 值都会被自动插入到 request.META['REMOTE_ADDR'] 中。这样，Django应用就不需要关心自己是否位于负载平衡proxy之后；简单读取 request.META['REMOTE_ADDR'] 的方式在是否有proxy的情形下都将正常工作。
+
+实际上，为针对这个非常常见的情形，Django已将该中间件内置。 它位于 django.middleware.http 中, 下一节将给出这个中间件相关的更多细节
+
+【安装中间件】
+要启用一个中间件，只需将其添加到配置模块的 MIDDLEWARE_CLASSES 元组中。 在 MIDDLEWARE_CLASSES 中，中间件组件用字符串表示： 指向中间件类名的完整Python路径。 例如，下面是 django-admin.py startproject 创建的缺省 MIDDLEWARE_CLASSES 。
+这里中间件出现的顺序非常重要。 在request和view的处理阶段，Django按照 MIDDLEWARE_CLASSES 中出现的顺序来应用中间件，而在response和异常处理阶段，Django则按逆序来调用它们。 也就是说，Django将 MIDDLEWARE_CLASSES 视为view函数外层的顺序包装子： 在request阶段按顺序从上到下穿过，而在response则反过来。
+
+【中间件方法】
+##Initializer: __init__(self) __init__(self)「初始化］
+在中间件类中， __init__() 方法用于执行系统范围的设置。
+
+出于性能的考虑，每个已启用的中间件在每个服务器进程中只初始化 一 次。 也就是说 __init__() 仅在服务进程启动的时候调用，而在针对单个request处理时并不执行。
+
+对一个middleware而言，定义 __init__() 方法的通常原因是检查自身的必要性。 如果 __init__() 抛出异常 django.core.exceptions.MiddlewareNotUsed ,则Django将从middleware栈中移出该middleware。 可以用这个机制来检查middleware依赖的软件是否存在、服务是否运行于调试模式、以及任何其它环境因素。
+
+在中间件中定义 __init__() 方法时，除了标准的 self 参数之外，不应定义任何其它参数。
+
+##Request预处理函数: process_request(self, request) process_request(self, request)
+这个方法的调用时机在Django接收到request之后，但仍未解析URL以确定应当运行的view之前。 Django向它传入相应的 HttpRequest 对象，以便在方法中修改。
+
+process_request() 应当返回 None 或 HttpResponse 对象.
+
+    如果返回 None , Django将继续处理这个request,执行后续的中间件， 然后调用相应的view.
+
+    如果返回 HttpResponse 对象, Django 将不再执行 任何 其它的中间件(而无视其种类)以及相应的view。 Django将立即返回该 HttpResponse .
+
+##View预处理函数: process_view(self, request, view, args, kwargs) process_view(self, request, view, args, kwargs)
+这个方法的调用时机在Django执行完request预处理函数并确定待执行的view之后，但在view函数实际执行之前。
+
+##Response后处理函数: process_response(self, request, response) process_response(self, request, response)
+这个方法的调用时机在Django执行view函数并生成response之后。
+这个方法的参数相当直观: request 是request对象，而 response 则是从view中返回的response对象。
+不同可能返回 None 的request和view预处理函数, process_response() 必须 返回 HttpResponse 对象. 这个response对象可以是传入函数的那一个原始对象(通常已被修改)，也可以是全新生成的。
+
+##Exception后处理函数: process_exception(self, request, exception) process_exception(self, request, exception)
+这个方法只有在request处理过程中出了问题并且view函数抛出了一个未捕获的异常时才会被调用。 这个钩子可以用来发送错误通知，将现场相关信息输出到日志文件, 或者甚至尝试从错误中自动恢复。
+
+【内置的中间件】
+
+##认证支持中间件
+这个中间件激活认证支持功能. 它在每个传入的 HttpRequest 对象中添加代表当前登录用户的 request.user 属性。
+
+##通用中间件
+Middleware class: django.middleware.common.CommonMiddleware .
+    禁止 ``DISALLOWED_USER_AGENTS`` 列表中所设置的user agent访问 ：一旦提供，这一列表应当由已编译的正则表达式对象组成，这些对象用于匹配传入的request请求头中的user-agent域。 下面这个例子来自某个配置文件片段：
+
+import re
+
+DISALLOWED_USER_AGENTS = (
+    re.compile(r'^OmniExplorer_Bot'),
+    re.compile(r'^Googlebot')
+)
+
+    请注意 import re ,因为 DISALLOWED_USER_AGENTS 要求其值为已编译的正则表达式(也就是 re.compile() 的返回值)。
+
+##压缩中间件
+中间件类 django.middleware.gzip.GZipMiddleware .
+这个中间件自动为能处理gzip压缩(包括所有的现代浏览器)的浏览器自动压缩返回]内容。 这将极大地减少Web服务器所耗用的带宽。 代价是压缩页面需要一些额外的处理时间。
+
+##条件化的GET中间件
+Middleware class: django.middleware.http.ConditionalGetMiddleware .
+
+这个中间件对条件化 GET 操作提供支持。 如果response头中包括 Last-Modified 或 ETag 域，并且request头中包含 If-None-Match 或 If-Modified-Since 域，且两者一致，则该response将被response 304(Not modified)取代。 对 ETag 的支持依赖于 USE_ETAGS 配置及事先在response头中设置 ETag 域。稍前所讨论的通用中间件可用于设置response中的 ETag 域。 As discussed above, the ETag header is set by the Common middleware.
+
+此外，它也将删除处理 HEAD request时所生成的response中的任何内容，并在所有request的response头中设置 Date 和 Content-Length 域。
+
+##会话支持中间件
+Middleware class: django.contrib.sessions.middleware.SessionMiddleware .
+
+这个中间件激活会话支持功能.
+
+##站点缓存中间件
+Middleware classes: django.middleware.cache.UpdateCacheMiddleware and django.middleware.cache.FetchFromCacheMiddleware .
+
+这些中间件互相配合以缓存每个基于Django的页面
+
+##事务处理中间件
+Middleware class: django.middleware.transaction.TransactionMiddleware .
+
+这个中间件将数据库的 COMMIT 或 ROLLBACK 绑定到request/response处理阶段。 如果view函数成功执行，则发出 COMMIT 指令。 如果view函数抛出异常，则发出 ROLLBACK 指令。
+
+这个中间件在栈中的顺序非常重要。 其外层的中间件模块运行在Django缺省的 保存-提交 行为模式下。 而其内层中间件(在栈中的其后位置出现)将置于与view函数一致的事务机制的控制下。
+
+
+##集成已有的数据库和应用##
+尽管Django偏爱从头开始的项目，将这个框架和以前遗留的数据库和应用相整合仍然是可能的。 本章就将介绍一些整合的技巧
+
+【与遗留数据库整合】
+Django的数据库层从Python代码生成SQL schemas—但是对于遗留数据库，你已经拥有SQL schemas. 这种情况,你需要为已经存在的数据表创建model. 为此,Django自带了一个可以通过读取您的数据表结构来生成model的工具. 该辅助工具称为inspectdb,你可以通过执行manage.py inspectdb来调用它.
+
+##使用 inspectdb
+inspectdb工具自省你配置文件指向的数据库，针对每一个表生成一个Django模型，然后将这些Python模型的代码显示在系统的标准输出里面。
+
+##清理生成的Models
+如你可能会预料到的，数据库自省不是完美的，你需要对产生的模型代码做些许清理。
+
+【与认证系统的整合】
+将Django与其他现有认证系统的用户名和密码或者认证方法进行整合是可以办到的。
+
+##指定认证后台
+在后台，Django维护了一个用于检查认证的后台列表。 当某个人调用 django.contrib.auth.authenticate() (如14章中所述)时，Django会尝试对其认证后台进行遍历认证。 如果第一个认证方法失败，Django会尝试认证第二个，以此类推，一直到尝试完。
+
+##编写认证后台
+一个认证后台其实就是一个实现了如下两个方法的类： get_user(id) 和 authenticate(**credentials) 。
+
+方法 get_user 需要一个参数 id ，这个 id 可以是用户名，数据库ID或者其他任何数值，该方法会返回一个 User 对象。
+
+【和遗留Web应用集成】
+同由其他技术驱动的应用一样，在相同的Web服务器上运行Django应用也是可行的。 最简单直接的办法就是利用Apaches配置文件httpd.conf，将不同的URL类型分发至不同的技术。 （请注意，第12章包含了在Apache/mod_python上配置Django的相关内容，因此在尝试本章集成之前花些时间去仔细阅读第12章或许是值得的。)
+关键在于只有在您的httpd.conf文件中进行了相关定义，Django对某个特定的URL类型的驱动才会被激活。 在第12章中解释的缺省部署方案假定您需要Django去驱动某个特定域上的每一个页面。
+精妙之处在于Django将<location>指令值限定于一个特定的目录树上。 举个例子，比如说您有一个在某个域中驱动大多数页面的遗留PHP应用，并且您希望不中断PHP代码的运行而在../admin/位置安装一个Django域。 要做到这一点，您只需将<location>值设置为/admin/即可。
+<Location "/admin/">
+    SetHandler python-program
+    PythonHandler django.core.handlers.modpython
+    SetEnv DJANGO_SETTINGS_MODULE mysite.settings
+    PythonDebug On
+</Location>
+有了这样的设置，只有那些以/admin/开头的URL地址才会触发Django去进行处理。 其他页面会使用已存在的设置。
+
+请注意，把Diango绑定到的合格的URL（比如在本章例子中的 /admin/ ）并不会影响其对URL的解析。 绝对路径对Django才是有效的（例如 /admin/people/person/add/ ），而非截断后的URL（例如 /people/person/add/ ）。这意味着你的根URLconf必须包含前缀 /admin/ 。
+
+
+##国际化##
+国际化* 是指为了该软件在任何地区的潜在使用而进行程序设计的过程。 它包括了为将来翻译而标记的文本（比如用户界面要素和错误信息等）、日期和时间的抽象显示以便保证不同地区的标准得到遵循、为不同时区提供支持，并且一般确保代码中不会存在关于使用者所在地区的假设。 您会经常看到国际化被缩写为“I18N”(18表示Internationlization这个单词首字母I和结尾字母N之间的字母有18个)。
+本地化* 是指使一个国际化的程序为了在某个特定地区使用而进行实际翻译的过程。 有时，本地化缩写为 L10N 。
+
+Django的国际化挂接是默认开启的，这可能会给Django的运行增加一点点开销。 如果您不需要国际化支持，那么您可以在您的设置文件中设置 USE_I18N = False 。 如果 USE_I18N 被设为 False ，那么Django会进行一些优化，而不加载国际化支持机制。
+
+对你的Django应用进行国际化的三个步骤:
+
+    第一步：在你的Python代码和模板中嵌入待翻译的字符串。
+
+    第二步：把那些字符串翻译成你要支持的语言。
+
+    第三步：在你的Django settings文件中激活本地中间件。
+
+标准翻译
+
+使用函数 ugettext() 来指定一个翻译字符串。 作为惯例，使用短别名 _ 来引入这个函数以节省键入时间.
+
+在下面这个例子中，文本 "Welcome to my site" 被标记为待翻译字符串：
+
+from django.utils.translation import ugettext as _
+
+def my_view(request):
+    output = _("Welcome to my site.")
+    return HttpResponse(output)
+
+显然，你也可以不使用别名来编码。 下面这个例子和前面两个例子相同：
+1
+
+from django.utils.translation import ugettext
+
+def my_view(request):
+    output = ugettext("Welcome to my site.")
+    return HttpResponse(output)
+
+翻译字符串对于计算出来的值同样有效。 下面这个例子等同前面一种：
+
+def my_view(request):
+    words = ['Welcome', 'to', 'my', 'site.']
+    output = _(' '.join(words))
+    return HttpResponse(output)
+
+翻译对变量也同样有效。 这里是一个同样的例子：
+
+def my_view(request):
+    sentence = 'Welcome to my site.'
+    output = _(sentence)
+    return HttpResponse(output)
+
+标记字符串为不操作
+
+使用 django.utils.translation.gettext_noop() 函数来标记一个不需要立即翻译的字符串。 这个串会稍后从变量翻译。
+
+惰性翻译
+
+使用 django.utils.translation.gettext_lazy() 函数，使得其中的值只有在访问时才会被翻译，而不是在 gettext_lazy() 被调用时翻译。
+
+复数的处理
+
+使用django.utils.translation.ungettext()来指定以复数形式表示的消息。
+
+【模板代码】
+Django模板使用两种模板标签，且语法格式与Python代码有些许不同。 为了使得模板访问到标签，需要将 {% load i18n %} 放在模板最前面。
+
+这个{% trans %}模板标记翻译一个常量字符串 (括以单或双引号) 或 可变内容：
+
+<title>{% trans "This is the title." %}</title>
+<title>{% trans myvar %}</title>
+
+【与惰性翻译对象一道工作】
+在模型和公用函数中，使用ugettext_lazy()和ungettext_lazy()来标记字符串是很普遍的操作。 当你在你的代码中其它地方使用这些对象时，你应当确定你不会意外地转换它们成一个字符串，因为它们应被尽量晚地转换（以便正确的地域生效） 这需要使用及个帮助函数。
+
+拼接字符串： string_concat()
+
+标准Python字符串拼接(''.join([...]) ) 将不会工作在包括惰性翻译对象的列表上。 作为替代，你可以使用django.utils.translation.string_concat()， 这个函数创建了一个惰性对象，其连接起它的内容 并且 仅当结果被包括在一个字符串中时转换它们为字符串
+
+allow_lazy() 修饰符
+
+Django提供很多功能函数（如：取一个字符串作为他们的第一个参数并且对那个字符串做些什么）。(尤其在 django.utils 中) 这些函数被模板过滤器像在其他代码中一样直接使用。
+
+【如何创建语言文件】
+当你标记了翻译字符串，你就需要写出（或获取已有的）对应的语言翻译信息。 这里就是它如何工作的。
+
+消息文件
+
+第一步，就是为一种语言创建一个信息文件。 信息文件是包含了某一语言翻译字符串和对这些字符串的翻译的一个文本文件。 信息文件以 .po 为后缀名。
+
+Django中带有一个工具， bin/make-messages.py ，它完成了这些文件的创建和维护工作。
+
+【编译信息文件】
+创建信息文件之后，每次对其做了修改，都需要将它重新编译成一种更有效率的形式，供 gettext 使用。可以使用django-admin.py compilemessages完成。
+
+这个工具作用于所有有效的 .po 文件，创建优化过的二进制 .mo 文件供 gettext 使用。在你可以运行django-admin.py makemessages的目录下，运行django-admin.py compilemessages：
+
+django-admin.py compilemessages
+
+就是这样了。 你的翻译成果已经可以使用了。
+
+【Django如何处理语言偏好】
+要设定一个安装阶段的语种偏好，请设定LANGUAGE_CODE。如果其他翻译器没有找到一个译文，Django将使用这个语种作为缺省的翻译最终尝试。
+如果要让每一个使用者各自指定语言偏好，就需要使用 LocaleMiddleware 。 LocaleMiddleware 使得Django基于请求的数据进行语言选择，从而为每一位用户定制内容。 它为每一个用户定制内容。
+
+使用 LocaleMiddleware 需要在 MIDDLEWARE_CLASSES 设置中增加 'django.middleware.locale.LocaleMiddleware' 。 中间件的顺序是有影响的，最好按照依照以下要求：
+
+    保证它是第一批安装的中间件类。
+
+    因为 LocalMiddleware 要用到session数据，所以需要放在 SessionMiddleware 之后。
+
+    如果你使用CacheMiddleware,把LocaleMiddleware放在它后面。
+
+【在你自己的项目中使用翻译】
+Django使用以下算法寻找翻译：
+
+    首先，Django在该视图所在的应用程序文件夹中寻找 locale 目录。 若找到所选语言的翻译，则加载该翻译。
+
+    第二步，Django在项目目录中寻找 locale 目录。 若找到翻译，则加载该翻译。
+
+    最后，Django使用 django/conf/locale 目录中的基本翻译。
+
+【set_language 重定向视图】
+方便起见，Django自带了一个 django.views.i18n.set_language 视图，作用是设置用户语言偏好并重定向返回到前一页面。
+
+【使用JavaScript翻译目录】
+。。。
+
+
+##安全##
+
+【SQL注入】
+在SQL注入中，攻击者改变web网页的参数（例如 GET /POST 数据或者URL地址），加入一些其他的SQL片段。 未加处理的网站会将这些信息在后台数据库直接运行。
+ 例如，假设我们要写一个函数，用来从通信录搜索页面收集一系列的联系信息。 为防止垃圾邮件发送器阅读系统中的email，我们将在提供email地址以前，首先强制用户输入用户名。
+
+def user_contacts(request):
+    user = request.GET['username']
+    sql = "SELECT * FROM user_contacts WHERE username = '%s';" % username
+    # execute the SQL here...
+
+备注
+
+在这个例子中，以及在以下所有的“不要这样做”的例子里，我们都去除了大量的代码，避免这些函数可以正常工作。 我们可不想这些例子被拿出去使用。
+
+尽管，一眼看上去，这一点都不危险，实际上却不尽然。
+
+首先，我们对于保护email列表所采取的措施，遇到精心构造的查询语句就会失效。 想象一下，如果攻击者在查询框中输入 "' OR 'a'='a" 。 此时，查询的字符串会构造如下：
+
+SELECT * FROM user_contacts WHERE username = '' OR 'a' = 'a';
+
+由于我们允许不安全的SQL语句出现在字符串中，攻击者加入 OR 子句，使得每一行数据都被返回。
+
+事实上，这是最温和的攻击方式。 如果攻击者提交了 "'; DELETE FROM user_contacts WHERE 'a' = 'a'" ，我们最终将得到这样的查询：
+
+SELECT * FROM user_contacts WHERE username = ''; DELETE FROM user_contacts WHERE 'a' = 'a';
+
+哦！我们整个通信录名单去哪儿了？ 我们整个通讯录会被立即删除
+
+
+##解决方案
+
+ 绝不信任用户提交的数据，并且在传递给SQL语句时，总是转义它。
+ Django的数据库API帮你做了。 它会根据你所使用的数据库服务器（例如PostSQL或者MySQL）的转换规则，自动转义特殊的SQL参数。
+
+举个例子，在下面这个API调用中：
+
+foo.get_list(bar__exact="' OR 1=1")
+
+Django会自动进行转义，得到如下表达：
+
+SELECT * FROM foos WHERE bar = '\' OR 1=1'
+
+不幸的是，您并不是在SQL中能够处处都使用绑定参数，绑定参数不能够作为标识符（如表或列名等）。 因此，如果您需要这样做—我是说—动态构建 POST 变量中的数据库表的列表的话，您需要在您的代码中来对这些数据库表的名字进行转义。 Django提供了一个函数， django.db.backend.quote_name ，这个函数能够根据当前数据库引用结构对这些标识符进行转义。
+
+【跨站点脚本 (XSS)】
+跨站点脚本 (XSS)有时在被渲染成HTML之前，不能恰当地对用户提交的内容进行转义。 这使得攻击者能够向你的网站页面插入通常以 <script> 标签形式的任意HTML代码。
+
+攻击者通常利用XSS攻击来窃取cookie和会话信息，或者诱骗用户将其私密信息透漏给被人（又称 钓鱼 ）。
+这种类型的攻击能够采用多种不同的方式，并且拥有几乎无限的变体，因此我们还是只关注某个典型的例子吧。 让我们来想想这样一个极度简单的Hello World视图：
+
+from django.http import HttpResponse
+
+def say_hello(request):
+    name = request.GET.get('name', 'world')
+    return HttpResponse('<h1>Hello, %s!</h1>' % name)
+
+这个视图只是简单的从GET参数中读取姓名然后将姓名传递给hello.html模板。 因此，如果我们访问 http://example.com/hello/?name=Jacob ，被呈现的页面将会包含一以下这些：
+
+<h1>Hello, Jacob!</h1>
+
+但是，等等，如果我们访问 http://example.com/hello/?name=<i>Jacob</i> 时又会发生什么呢？
+
+<h1>Hello, <i>Jacob</i>!</h1>
+一个攻击者不会使用<i>标签开始的类似代码，他可能会用任意内容去包含一个完整的HTML集来劫持您的页面。 这种类型的攻击已经运用于虚假银行站点以诱骗用户输入个人信息，事实上这就是一种劫持XSS的形式，用以使用户向攻击者提供他们的银行帐户信息。
+
+##解决方案
+解决方案是简单的： 总是转义可能来自某个用户的任何内容。
+为了防止这种情况，Django的模板系统自动转义所有的变量值。 让我们来看看如果我们使用模板系统重写我们的例子会发生什么
+
+# views.py
+
+from django.shortcuts import render_to_response
+
+def say_hello(request):
+    name = request.GET.get('name', 'world')
+    return render_to_response('hello.html', {'name': name})
+
+# hello.html
+
+<h1>Hello, {{ name }}!</h1>
+
+这样，一个到`` http://example.com/hello/name=Jacob`` 的请求将导致下面的页面：
+1
+
+<h1>Hello, &lt;i&gt;Jacob&lt;/i&gt;!</h1>
+
+我们在第四章涵盖了Django的自动转义，一起想办法将其关闭。 甚至，如果Django真的新增了这些特性，您也应该习惯性的问自己，一直以来，这些数据都来自于哪里呢？ 没有哪个自动解决方案能够永远保护您的站点百分之百的不会受到XSS攻击。
+
+【伪造跨站点请求】
+伪造跨站点请求(CSRF)发生在当某个恶意Web站点诱骗用户不知不觉的从一个信任站点下载某个URL之时，这个信任站点已经被通过信任验证，因此恶意站点就利用了这个被信任状态。
+
+【会话伪造/劫持】
+这不是某个特定的攻击，而是对用户会话数据的通用类攻击。 这种攻击可以采取多种形式：
+
+    中间人 攻击：检索所在有线（无线）网络，监听会话数据。
+
+    伪造会话 ：攻击者利用会话ID（可能是通过中间人攻击来获得）将自己伪装成另一个用户。
+
+    这两种攻击的一个例子可以是在一间咖啡店里的某个攻击者利用店内的无线网络来捕获某个会话cookie，然后她就可以利用那个cookie来假冒原始用户。 她便可以使该cookie来模拟原始用户。
+
+    伪造cookie ：就是指某个攻击者覆盖了在某个cookie中本应该是只读的数据。 ` 第十四章 <../chapter14/>`__ 详细介绍了cookies如何工作，以及要点之一的是，它在你不知道的情况下无视浏览器和恶意用户私自改变cookies。
+
+    Web站点以 IsLoggedIn=1 或者 LoggedInAsUser=jacob 这样的方式来保存cookie由来已久，使用这样的cookie是再简单不过的了。
+
+    一个更微妙的层面上，然而，相信在cookies中存储的任意信息绝对不是一个好主意。 你永远不知道谁一直在作怪。
+
+    会话滞留 ：攻击者诱骗用户设置或者重设置该用户的会话ID。
+
+    例如，PHP允许在URL（如 http://example.com/?PHPSESSID=fa90197ca25f6ab40bb1374c510d7a32 等）中传递会话标识符。攻击者欺骗用户点击一个硬编码会话ID的链接，这回导致用户转到那个会话。
+
+    会话滞留已经运用在钓鱼攻击中，以诱骗用户在攻击者拥有的账号里输入其个人信息。 他可以稍后登陆账户并且检索数据。
+
+    会话中毒 ：攻击者通过用户提交设置会话数据的Web表单向该用户会话中注入潜在危险数据。
+
+    一个经典的例子就是一个站点在某个cookie中存储了简单的用户偏好（比如一个页面背景颜色）。 攻击者可以诱骗用户点击一个链接来提交背景颜色，实际上包含了一个XSS攻击。 如果颜色没有转义，那么就可以再把恶意代码注入到用户环境中。
+
+##解决方案
+有许多基本准则能够保护您不受到这些攻击：
+
+    不要在URL中包含任何session信息。
+
+    Django的session框架（参见` 第十四章 <../chapter14/>`__ ）根本不会容许session包含在URL中。
+
+    不要直接在cookie中保存数据。 相反，存储一个在后台映射到session数据存储的session ID。
+
+    如果使用Django内置的session框架（即 request.session ），它会自动进行处理。 这个session框架仅在cookie中存储一个session ID，所有的session数据将会被存储在数据库中。
+
+    如果需要在模板中显示session数据，要记得对其进行转义。 可参考之前的XSS部分，对所有用户提交的数据和浏览器提交的数据进行转义。 对于session信息，应该像用户提交的数据一样对其进行处理。
+
+    任何可能的地方都要防止攻击者进行session欺骗。
+
+    尽管去探测究竟是谁劫持了会话ID是几乎不可能的事儿，Django还是内置了保护措施来抵御暴力会话攻击。 会话ID被存在哈希表里（取代了序列数字），这样就阻止了暴力攻击，并且如果一个用户去尝试一个不存在的会话那么她总是会得到一个新的会话ID，这样就阻止了会话滞留。
+
+请注意，以上没有一种准则和工具能够阻止中间人攻击。 这些类型的攻击是几乎不可能被探测的。 如果你的站点允许登陆用户去查看任意敏感数据的话，你应该 总是 通过HTTPS来提供网站服务。 此外，如果你的站点使用SSL，你应该将 SESSION_COOKIE_SECURE 设置为 True ，这样就能够使Django只通过HTTPS发送会话cookie。
+
+【邮件头部注入】
+SQL注入的兄弟，是一种通过劫持发送邮件的Web表单的攻击方式。 攻击者能够利用这种技术来通过你的邮件服务器发送垃圾邮件。 在这种攻击面前，任何方式的来自Web表单数据的邮件头部构筑都是非常脆弱的。
+
+让我们看看在我们许多网站中发现的这种攻击的形式。 通常这种攻击会向硬编码邮件地址发送一个消息，因此，第一眼看上去并不显得像面对垃圾邮件那么脆弱。
+
+但是，大多数表单都允许用户输入自己的邮件主题（同时还有from地址，邮件体，有时还有部分其他字段）。 这个主题字段被用来构建邮件消息的主题头部。
+
+如果那个邮件头部在构建邮件信息时没有被转义，那么攻击者可以提交类似 "hello\ncc:spamvictim@example.com" （这里的 "\n" 是换行符）的东西。 这有可能使得所构建的邮件头部变成：
+
+To: hardcoded@example.com
+Subject: hello
+cc: spamvictim@example.com
+
+就像SQL注入那样，如果我们信任了用户提供的主题行，那样同样也会允许他构建一个头部恶意集，他也就能够利用联系人表单来发送垃圾邮件。
+
+##解决方案
+
+我们能够采用与阻止SQL注入相同的方式来阻止这种攻击： 总是校验或者转义用户提交的内容。
+
+Django内建邮件功能（在 django.core.mail 中）根本不允许在用来构建邮件头部的字段中存在换行符（表单，收件地址，还有主题）。 如果您试图使用 django.core.mail.send_mail 来处理包含换行符的主题时，Django将会抛出BadHeaderError异常。
+
+如果你没有使用Django内建邮件功能来发送邮件，那么你需要确保包含在邮件头部的换行符能够引发错误或者被去掉。 你或许想仔细阅读 django.core.mail 中的 SateMIMEText 类来看看Django是如何做到这一点的。
+
+【目录遍历】
+是另外一种注入方式的攻击，在这种攻击中，恶意用户诱骗文件系统代码对Web服务器不应该访问的文件进行读取和/或写入操作。
+
+例子可以是这样的，某个视图试图在没有仔细对文件进行防毒处理的情况下从磁盘上读取文件：
+
+def dump_file(request):
+    filename = request.GET["filename"]
+    filename = os.path.join(BASE_PATH, filename)
+    content = open(filename).read()
+
+    # ...
+
+尽管一眼看上去，视图通过 BASE_PATH （通过使用 os.path.join ）限制了对于文件的访问，但如果攻击者使用了包含 .. （两个句号，父目录的一种简写形式）的文件名，她就能够访问到 BASE_PATH 目录结构以上的文件。对她来说，发现究竟使用几个点号只是时间问题，比如这样：../../../../../etc/passwd。
+
+任何不做适当转义地读取文件操作，都可能导致这样的问题。 允许 写 操作的视图同样容易发生问题，而且结果往往更加可怕。
+
+这个问题的另一种表现形式，出现在根据URL和其他的请求信息动态地加载模块。 一个众所周知的例子来自于Ruby on Rails。 在2006年上半年之前，Rails使用类似于 http://example.com/person/poke/1 这样的URL直接加载模块和调用函数。 结果是，精心构造的URL，可以自动地调用任意的代码，包括数据库的清空脚本。
+
+##解决方案
+如果你的代码需要根据用户的输入来读写文件，你就需要确保，攻击者不能访问你所禁止访问的目录。
+
+【暴露错误消息】
+在开发过程中，通过浏览器检查错误和跟踪异常是非常有用的。 Django提供了漂亮且详细的debug信息，使得调试过程更加容易。
+
+##解决方案
+
+正如我们在第12章所提到的，Django的`` DEBUG`` 设置控制这些错误信息的显示。 当你准备部署时请确认把这个设置为：`` False`` 。
+
